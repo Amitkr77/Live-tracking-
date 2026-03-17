@@ -46,14 +46,14 @@
     </div>
     <script>
 
-        const socket = io("http://localhost:5000");
+        const socket = io("https://live-tracking-gf97.onrender.com");
         const tripId = "123";
         const driverId = "driver_1";
 
         let watchId = null;
         async function startTrip() {
             if (watchId !== null) return;
-            const res = await fetch("http://localhost:5000/trip/start", {
+            const res = await fetch("https://live-tracking-gf97.onrender.com/trip/start", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json"
@@ -91,7 +91,7 @@
                 watchId = null;
             }
 
-            await fetch("http://localhost:5000/trip/stop", {
+            await fetch("https://live-tracking-gf97.onrender.com/trip/stop", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json"
