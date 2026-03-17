@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>Driver Tracking</title>
+
+    <!-- Tailwind CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+</head>
+
+
+<body class="bg-gray-100 min-h-screen flex items-center justify-center">
+
+    <div class="bg-white shadow-xl rounded-2xl p-6 w-full max-w-md">
+
+        <h2 class="text-2xl font-bold text-center mb-4 text-gray-800">
+            🚗 Driver Tracking
+        </h2>
+
+        <!-- Status -->
+        <div id="status" class="text-center mb-4 text-sm font-semibold text-red-500">
+            ❌ Trip Stopped
+        </div>
+
+        <!-- Buttons -->
+        <div class="flex gap-4 mb-4">
+            <button id="startBtn" onclick="startTrip()"
+                class="flex-1 bg-green-500 hover:bg-green-600 text-white py-2 rounded-lg font-semibold transition">
+                Start Trip
+            </button>
+
+            <button id="stopBtn" onclick="stopTrip()"
+                class="flex-1 bg-red-500 hover:bg-red-600 text-white py-2 rounded-lg font-semibold transition">
+                Stop Trip
+            </button>
+        </div>
+
+        <!-- Live Log -->
+        <div class="bg-gray-50 border rounded-lg p-3 h-40 overflow-y-auto text-sm">
+            <p class="text-gray-500 mb-2">📍 Live Location Logs:</p>
+            <div id="log" class="space-y-1 text-gray-700"></div>
+        </div>
+
+    </div>
+    <script>
+
+        const socket = io("http://localhost:5000");
+        const tripId = "123";
+        const driverId = "driver_1";
+
+        let watchId = null;
+        async function startTrip() {
+            if (watchId !== null) return;
+            const res = await fetch("http://localhost:5000/trip/start", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ tripId, driverId })
+            });
+
+            if (!res.ok) {
+                alert("Failed to start trip");
+                return;
+            }
+
+            socket.emit("join_trip", { tripId, driverId });
+
+            watchId = navigator.geolocation.watchPosition((pos) => {
+                const lat = pos.coords.latitude;
+                const lng = pos.coords.longitude;
+
+                console.log("Sending:", lat, lng);
+
+                socket.emit("location_update", { tripId, driverId, lat, lng });
+
+            }, (err) => {
+                console.error("GPS error:", err.message);
+                alert("Location access denied. Please enable GPS.");
+            }, {
+                enableHighAccuracy: true,
+                timeout: 10000
+            });
+        }
+        async function stopTrip() {
+
+            if (watchId !== null) {
+                navigator.geolocation.clearWatch(watchId);
+                watchId = null;
+            }
+
+            await fetch("http://localhost:5000/trip/stop", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ tripId, driverId })
+            });
+
+        }
+
+        socket.on("receive_location", (data) => {
+            console.log("Live location:", data);
+        });
+
+        socket.on("trip_stopped", () => {
+            alert("Trip ended by server");
+        });
+    </script>
+
+</body>
+
+</html>

@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>Customer - Live Tracking</title>
+    <!-- Tailwind -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+
+    <style>
+        #map {
+            height: 500px;
+        }
+    </style>
+
+</head>
+
+<body class="bg-gray-100 min-h-screen flex flex-col">
+
+    <!-- Header -->
+    <div class="bg-white shadow-md px-6 py-4 flex items-center justify-between">
+        <h2 class="text-xl font-bold text-gray-800">📍 Driver Live Tracking</h2>
+
+        <div id="status" class="text-sm font-semibold text-yellow-600">
+            ⏳ Waiting for driver...
+        </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="p-4 flex gap-3 bg-gray-50 border-b">
+        <button onclick="focusDriver()"
+            class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg shadow transition">
+            🎯 Focus Driver
+        </button>
+
+        <button onclick="enableFollow()"
+            class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg shadow transition">
+            🔄 Auto Follow
+        </button>
+    </div>
+
+    <!-- Map Container -->
+    <div class="flex-1 p-4">
+        <div id="map" class="w-full h-full rounded-2xl shadow-lg border"></div>
+    </div>
+    <script>
+
+        const socket = io("http://localhost:5000");
+
+        const tripId = "123";
+        const driverId = "driver_1";
+
+        socket.emit("join_trip", { tripId, driverId });
+
+        const map = L.map("map").setView([20.5937, 78.9629], 5);
+
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+            attribution: "Map"
+        }).addTo(map);
+
+        let marker;
+        let driverLat = null;
+        let driverLng = null;
+        let autoFollow = true;
+
+        let animationFrameId;
+        let path = [];
+        let polyline = null;
+
+        // ✅ Driver icon (created once)
+        const driverIcon = L.icon({
+            iconUrl: "https://tse4.mm.bing.net/th/id/OIP.TLKTJDEq6qu4ECeo7LGkYwHaEu?pid=Api&P=0&h=180",
+            iconSize: [40, 40]
+        });
+
+        // ✅ Stop auto-follow if user moves map
+        map.on("dragstart", () => {
+            autoFollow = false;
+        });
+
+        socket.on("receive_location", (data) => {
+
+            console.log("Got location:", data);
+
+            const { lat, lng } = data;
+
+            if (!lat || !lng) return;
+
+            driverLat = lat;
+            driverLng = lng;
+
+            // Smooth follow
+            if (autoFollow) {
+                map.panTo([lat, lng]);
+            }
+
+            // First marker
+            if (!marker) {
+                marker = L.marker([lat, lng], { icon: driverIcon }).addTo(map);
+                map.setView([lat, lng], 15);
+            } else {
+                animateMarker(marker, lat, lng);
+            }
+
+            // Update path
+            path.push([lat, lng]);
+
+            if (!polyline) {
+                polyline = L.polyline(path, { color: "blue" }).addTo(map);
+            } else {
+                polyline.setLatLngs(path);
+            }
+
+        });
+
+        socket.on("trip_stopped", () => {
+            alert("Trip has ended.");
+            if (marker) {
+                marker.bindPopup("Driver has arrived").openPopup();
+            }
+        });
+
+        function focusDriver() {
+            if (driverLat && driverLng) {
+                autoFollow = true;
+                map.setView([driverLat, driverLng], 16);
+            } else {
+                alert("Driver location not available yet");
+            }
+        }
+
+        function animateMarker(marker, newLat, newLng) {
+
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+            }
+
+            const start = marker.getLatLng();
+            const duration = 2000;
+            const startTime = performance.now();
+
+            function animate(time) {
+                const progress = Math.min((time - startTime) / duration, 1);
+
+                const lat = start.lat + (newLat - start.lat) * progress;
+                const lng = start.lng + (newLng - start.lng) * progress;
+
+                marker.setLatLng([lat, lng]);
+
+                if (progress < 1) {
+                    animationFrameId = requestAnimationFrame(animate);
+                }
+            }
+
+            animationFrameId = requestAnimationFrame(animate);
+        }
+
+    </script>
+
+</body>
+
+</html>
