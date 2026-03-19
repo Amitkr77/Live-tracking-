@@ -5,22 +5,27 @@
     <meta charset="UTF-8">
     <title>Driver Tracking</title>
 
-    <!-- Tailwind CDN -->
+    <!-- Tailwind -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+
+    <!-- Google Maps -->
+    <script async defer
+        src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBo9B-easm-3SM-2dFvqaT3WBnmniU6qFk&loading=async&libraries=geometry,marker,routes&callback=initMap">
+        </script>
+
 </head>
 
+<body class="bg-gradient-to-br from-gray-100 to-gray-200 min-h-screen flex items-center justify-center">
 
-<body class="bg-gray-100 min-h-screen flex items-center justify-center">
-
-    <div class="bg-white shadow-xl rounded-2xl p-6 w-full max-w-md">
+    <div class="bg-white shadow-2xl rounded-2xl p-6 w-full max-w-md">
 
         <h2 class="text-2xl font-bold text-center mb-4 text-gray-800">
             🚗 Driver Tracking
         </h2>
 
         <!-- Status -->
-        <div id="status" class="text-center mb-4 text-sm font-semibold text-red-500">
+        <div id="status" class="text-center mb-4 text-sm font-semibold px-3 py-2 rounded-lg bg-red-100 text-red-600">
             ❌ Trip Stopped
         </div>
 
@@ -28,86 +33,319 @@
         <div class="flex gap-4 mb-4">
             <button id="startBtn" onclick="startTrip()"
                 class="flex-1 bg-green-500 hover:bg-green-600 text-white py-2 rounded-lg font-semibold transition">
-                Start Trip
+                ▶ Start Trip
             </button>
 
             <button id="stopBtn" onclick="stopTrip()"
                 class="flex-1 bg-red-500 hover:bg-red-600 text-white py-2 rounded-lg font-semibold transition">
-                Stop Trip
+                ⏹ Stop Trip
             </button>
         </div>
 
         <!-- Live Log -->
-        <div class="bg-gray-50 border rounded-lg p-3 h-40 overflow-y-auto text-sm">
-            <p class="text-gray-500 mb-2">📍 Live Location Logs:</p>
+        <div class="bg-gray-50 border rounded-lg p-3 h-44 overflow-y-auto text-sm">
+            <p class="text-gray-500 mb-2 font-semibold">📍 Live Location Logs</p>
             <div id="log" class="space-y-1 text-gray-700"></div>
         </div>
 
-    </div>
-    <script>
+        <div class="mt-4">
+            <div id="map" class="w-full h-64 rounded-xl border shadow"></div>
+        </div>
 
+    </div>
+
+    <script>
         const socket = io("https://live-tracking-gf97.onrender.com");
+
+        let map;
+        let marker;
+        let customerLocation = null;
+        let customerMarker = null;
+
+        socket.on("trip_data", (data) => {
+            console.log("Trip data:", data);
+            customerLocation = data.customerLocation;
+
+            // 👉 create marker if map ready
+            if (map && customerLocation && !customerMarker) {
+                customerMarker = new google.maps.marker.AdvancedMarkerElement({
+                    position: customerLocation,
+                    map: map,
+                    content: (() => {
+                        const el = document.createElement("div");
+                        el.innerText = "📍";
+                        el.style.fontSize = "24px";
+                        return el;
+                    })()
+                });
+            }
+        });
+
+        function initMap() {
+            map = new google.maps.Map(document.getElementById("map"), {
+                center: { lat: 20.5937, lng: 78.9629 },
+                zoom: 5,
+                mapId: "4dd6763787209b1ccbdfd3ca"
+            });
+
+        }
+
+        let routeCalculated = false;
+
+        async function calculateRoadRoute(start, end) {
+            if (routeCalculated) return;
+
+            try {
+                const result = await google.maps.routes.Route.computeRoutes({
+                    origin: start,
+                    destination: end,
+                    travelMode: google.maps.TravelMode.DRIVING,
+                    fields: ["path"],
+                });
+
+                if (!result.routes || result.routes.length === 0) return;
+
+                const path = result.routes[0].path;
+
+                new google.maps.Polyline({
+                    path: path,
+                    strokeColor: "#4285F4",
+                    strokeWeight: 5,
+                    map: map
+                });
+
+                routeCalculated = true;
+
+            } catch (err) {
+                console.error("Route error:", err);
+            }
+        }
+
+        function createCarMarker() {
+            const img = document.createElement("img");
+            img.src = "https://res.cloudinary.com/dbl9y4zkr/image/upload/v1773823755/car_n4nchm.png";
+            img.style.width = "40px";
+            img.style.height = "40px";
+            img.style.transformOrigin = "center";
+            return img;
+        }
+
         const tripId = "123";
         const driverId = "driver_1";
 
         let watchId = null;
-        async function startTrip() {
-            if (watchId !== null) return;
-            const res = await fetch("https://live-tracking-gf97.onrender.com/trip/start", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({ tripId, driverId })
-            });
 
-            if (!res.ok) {
-                alert("Failed to start trip");
-                return;
-            }
+        const statusDiv = document.getElementById("status");
+        const logDiv = document.getElementById("log");
+        const startBtn = document.getElementById("startBtn");
+        const stopBtn = document.getElementById("stopBtn");
 
-            socket.emit("join_trip", { tripId, driverId });
+        // 🔹 Status handler
+        function setStatus(type, message) {
+            const styles = {
+                success: "bg-green-100 text-green-600",
+                error: "bg-red-100 text-red-600",
+                warning: "bg-yellow-100 text-yellow-700"
+            };
 
-            watchId = navigator.geolocation.watchPosition((pos) => {
-                const lat = pos.coords.latitude;
-                const lng = pos.coords.longitude;
-
-                console.log("Sending:", lat, lng);
-
-                socket.emit("location_update", { tripId, driverId, lat, lng });
-
-            }, (err) => {
-                console.error("GPS error:", err.message);
-                alert("Location access denied. Please enable GPS.");
-            }, {
-                enableHighAccuracy: true,
-                timeout: 10000
-            });
+            statusDiv.className = `text-center mb-4 text-sm font-semibold px-3 py-2 rounded-lg ${styles[type]}`;
+            statusDiv.innerText = message;
         }
-        async function stopTrip() {
 
+        // 🔹 Log handler (max 20 logs)
+        function addLog(text) {
+            const p = document.createElement("p");
+            p.textContent = text;
+            logDiv.prepend(p);
+
+            if (logDiv.children.length > 20) {
+                logDiv.removeChild(logDiv.lastChild);
+            }
+        }
+
+        // 🔹 Local stop (NO API call)
+        function handleLocalStop(message = "❌ Trip Stopped") {
             if (watchId !== null) {
                 navigator.geolocation.clearWatch(watchId);
                 watchId = null;
             }
 
-            await fetch("https://live-tracking-gf97.onrender.com/trip/stop", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({ tripId, driverId })
-            });
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
 
+            setStatus("error", message);
+            addLog("🛑 Trip stopped");
         }
 
+        // 🔹 Start Trip
+        async function startTrip() {
+            if (watchId !== null) return;
+
+
+            startBtn.disabled = true;
+            setStatus("warning", "⏳ Starting trip...");
+
+            try {
+                const res = await fetch("https://live-tracking-gf97.onrender.com/trip/start", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ tripId, driverId })
+                });
+
+                if (!res.ok) {
+                    throw new Error("Start failed");
+                }
+
+                socket.emit("join_trip", { tripId, driverId });
+
+                stopBtn.disabled = false;
+                setStatus("success", "✅ Trip Started");
+
+                watchId = navigator.geolocation.watchPosition((pos) => {
+                    const lat = pos.coords.latitude;
+                    const lng = pos.coords.longitude;
+
+                    const time = new Date().toLocaleTimeString();
+
+                    socket.emit("location_update", { tripId, driverId, lat, lng });
+
+                    const accuracy = pos.coords.accuracy;
+                    addLog(`🕒 ${time} → Lat: ${lat.toFixed(5)}, Lng: ${lng.toFixed(5)} (±${accuracy}m)`);
+
+                    // ✅ Map update
+                    if (!map) {
+                        console.warn("Map not loaded yet");
+                        return;
+                    }
+                    if (!marker) {
+                        marker = new google.maps.marker.AdvancedMarkerElement({
+                            position: { lat, lng },
+                            map: map,
+                            content: createCarMarker()
+                        });
+
+                        map.setCenter({ lat, lng });
+                        map.setZoom(16);
+
+                        if (customerLocation) {
+                            calculateRoadRoute({ lat, lng }, customerLocation);
+                        }
+                    } else {
+                        animateMarker(marker, lat, lng);
+                        map.panTo({ lat, lng });
+                    }
+
+                    updateETADisplay({ lat, lng }, customerLocation);
+
+
+
+                }, (err) => {
+                    setStatus("error", "❌ GPS Error");
+                    startBtn.disabled = false;
+                    console.error("GPS error:", err.message);
+                    alert("Location access denied. Please enable GPS.");
+                    setStatus("error", "❌ Location permission denied");
+                    addLog("⚠ User denied GPS access");
+                }, {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 0
+                });
+
+            } catch (err) {
+                startBtn.disabled = false;
+                setStatus("error", "❌ Failed to start trip");
+                console.error(err);
+            }
+        }
+
+        async function updateETADisplay(start, end) {
+            try {
+                const result = await google.maps.routes.Route.computeRoutes({
+                    origin: start,
+                    destination: end,
+                    travelMode: google.maps.TravelMode.DRIVING,
+                    fields: ["legs"],
+                });
+
+                if (!result.routes || result.routes.length === 0) return;
+
+                const leg = result.routes[0].legs[0];
+
+                const distanceKm = (leg.distanceMeters / 1000).toFixed(1);
+                const minutes = Math.ceil(leg.durationMillis / 60000);
+
+                console.log(`ETA: ${minutes} min | ${distanceKm} km`);
+
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        // 🔹 Stop Trip (API call)
+        async function stopTrip() {
+            try {
+                const res = await fetch("https://live-tracking-gf97.onrender.com/trip/stop", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ tripId, driverId })
+                });
+
+                if (!res.ok) {
+                    throw new Error("Stop failed");
+                }
+
+                handleLocalStop();
+
+            } catch (err) {
+                setStatus("error", "❌ Failed to stop trip");
+                console.error(err);
+            }
+        }
+
+        // 🔹 Socket listeners
         socket.on("receive_location", (data) => {
             console.log("Live location:", data);
         });
 
         socket.on("trip_stopped", () => {
-            alert("Trip ended by server");
+            handleLocalStop("⚠ Trip ended by server");
         });
+
+        socket.on("connect_error", () => {
+            setStatus("error", "❌ Socket connection failed");
+        });
+
+        // 🔹 Initial state
+        stopBtn.disabled = true;
+
+        function animateMarker(marker, newLat, newLng) {
+            const startLat = marker.position.lat();
+            const startLng = marker.position.lng();
+
+            const duration = 1000;
+            const startTime = performance.now();
+
+            function animate(time) {
+                const progress = Math.min((time - startTime) / duration, 1);
+
+                const lat = startLat + (newLat - startLat) * progress;
+                const lng = startLng + (newLng - startLng) * progress;
+
+                marker.position = { lat, lng };
+
+                if (progress < 1) {
+                    requestAnimationFrame(animate);
+                }
+            }
+
+            requestAnimationFrame(animate);
+        }
+
     </script>
 
 </body>

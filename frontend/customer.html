@@ -4,12 +4,16 @@
 <head>
     <meta charset="UTF-8">
     <title>Customer - Live Tracking</title>
+
     <!-- Tailwind -->
     <script src="https://cdn.tailwindcss.com"></script>
 
-    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <!-- Google Maps -->
+    <script async defer
+        src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBo9B-easm-3SM-2dFvqaT3WBnmniU6qFk&loading=async&libraries=geometry,marker,routes&callback=initMap">
+        </script>
 
-    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <!-- Socket -->
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 
     <style>
@@ -17,13 +21,12 @@
             height: 500px;
         }
     </style>
-
 </head>
 
 <body class="bg-gray-100 min-h-screen flex flex-col">
 
     <!-- Header -->
-    <div class="bg-white shadow-md px-6 py-4 flex items-center justify-between">
+    <div class="bg-white shadow-md px-6 py-4 flex justify-between items-center">
         <h2 class="text-xl font-bold text-gray-800">📍 Driver Live Tracking</h2>
 
         <div id="status" class="text-sm font-semibold text-yellow-600">
@@ -33,124 +36,282 @@
 
     <!-- Controls -->
     <div class="p-4 flex gap-3 bg-gray-50 border-b">
-        <button onclick="focusDriver()"
-            class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg shadow transition">
+        <button onclick="focusDriver()" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg shadow">
             🎯 Focus Driver
         </button>
 
-        <button onclick="enableFollow()"
-            class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg shadow transition">
+        <button onclick="enableFollow()" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg shadow">
             🔄 Auto Follow
         </button>
     </div>
 
-    <!-- Map Container -->
+    <!-- Map -->
     <div class="flex-1 p-4">
         <div id="map" class="w-full h-full rounded-2xl shadow-lg border"></div>
     </div>
-    <script>
 
+    <script>
         const socket = io("https://live-tracking-gf97.onrender.com");
 
         const tripId = "123";
         const driverId = "driver_1";
 
-        socket.emit("join_trip", { tripId, driverId });
+        // const customerLocation = { lat: 25.625167, lng: 85.055717 };
+        let customerLocation = null;
+        let customerMarker = null;
 
-        const map = L.map("map").setView([20.5937, 78.9629], 5);
+        socket.on("trip_data", (data) => {
+            console.log("Trip data:", data);
 
-        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-            attribution: "Map"
-        }).addTo(map);
+            if (!data.customerLocation) return;
+            customerLocation = data.customerLocation;
 
+
+            // 👉 create marker if map ready
+            if (map && customerLocation && !customerMarker) {
+                customerMarker = new google.maps.marker.AdvancedMarkerElement({
+                    position: customerLocation,
+                    map: map,
+                    content: (() => {
+                        const el = document.createElement("div");
+                        el.innerText = "📍";
+                        el.style.fontSize = "24px";
+                        return el;
+                    })()
+                });
+            }
+
+            if (marker && customerLocation && !routeCalculated) {
+                const pos = marker.position;
+                calculateRoadRoute(
+                    { lat: pos.lat(), lng: pos.lng() },
+                    customerLocation
+                );
+            }
+
+        });
+
+        let map;
         let marker;
+        // let directionsService, directionsRenderer;
         let driverLat = null;
         let driverLng = null;
         let autoFollow = true;
-
+        let routeCalculated = false;
         let animationFrameId;
-        let path = [];
-        let polyline = null;
 
-        // ✅ Driver icon (created once)
-        const driverIcon = L.icon({
-            iconUrl: "https://tse4.mm.bing.net/th/id/OIP.TLKTJDEq6qu4ECeo7LGkYwHaEu?pid=Api&P=0&h=180",
-            iconSize: [40, 40]
-        });
+        const statusDiv = document.getElementById("status");
 
-        // ✅ Stop auto-follow if user moves map
-        map.on("dragstart", () => {
-            autoFollow = false;
-        });
+        // ✅ Status
+        function setStatus(text, color = "text-green-600") {
+            statusDiv.className = `text-sm font-semibold ${color}`;
+            statusDiv.innerText = text;
+        }
 
-        socket.on("receive_location", (data) => {
+        // ✅ Init Map (IMPORTANT)
+        async function initMap() {
+            map = new google.maps.Map(document.getElementById("map"), {
+                center: { lat: 20.5937, lng: 78.9629 },
+                zoom: 5,
+                mapId: "4dd6763787209b1ccbdfd3ca"
+            });
 
-            console.log("Got location:", data);
 
+            // Create a simple overlay for Distance/Time
+            const infoDiv = document.createElement("div");
+            infoDiv.id = "stats-control";
+            infoDiv.style.backgroundColor = "white";
+            infoDiv.style.padding = "10px";
+            infoDiv.style.margin = "10px";
+            infoDiv.style.borderRadius = "5px";
+            infoDiv.style.boxShadow = "0 2px 6px rgba(0,0,0,.3)";
+            infoDiv.innerHTML = "<b>Calculating ETA...</b>";
+            map.controls[google.maps.ControlPosition.TOP_LEFT].push(infoDiv);
+            window.statsDiv = infoDiv;
+
+            // Destination marker
+            // new google.maps.marker.AdvancedMarkerElement({
+            //     position: customerLocation,
+            //     map: map,
+            //     content: (() => {
+            //         const el = document.createElement("div");
+            //         el.innerText = "📍";
+            //         el.style.fontSize = "24px";
+            //         return el;
+            //     })()
+            // });
+
+            map.addListener("dragstart", () => {
+                autoFollow = false;
+            });
+
+            setupSocket();
+        }
+
+        // ✅ Socket Setup
+        function setupSocket() {
+            socket.emit("join_trip", { tripId, driverId });
+
+            socket.on("receive_location", (data) => {
+                handleLocationUpdate(data);
+            });
+
+            socket.on("trip_stopped", () => {
+                setStatus("🚗 Driver arrived", "text-green-600");
+                alert("Trip has ended.");
+            });
+        }
+
+        // ✅ Car marker
+        function createCarMarker() {
+            const img = document.createElement("img");
+            img.src = "https://res.cloudinary.com/dbl9y4zkr/image/upload/v1773823755/car_n4nchm.png";
+            img.style.width = "40px";
+            img.style.height = "40px";
+            img.style.transformOrigin = "center";
+            return img;
+        }
+
+        // ✅ Handle location
+        function handleLocationUpdate(data) {
             const { lat, lng } = data;
-
             if (!lat || !lng) return;
+            console.log("Recivede locaiton: ", lat, lng);
+
 
             driverLat = lat;
             driverLng = lng;
 
-            // Smooth follow
+            setStatus("📡 Driver moving...", "text-blue-600");
+
             if (autoFollow) {
-                map.panTo([lat, lng]);
+                map.panTo({ lat, lng });
             }
 
-            // First marker
             if (!marker) {
-                marker = L.marker([lat, lng], { icon: driverIcon }).addTo(map);
-                map.setView([lat, lng], 15);
+                marker = new google.maps.marker.AdvancedMarkerElement({
+                    position: new google.maps.LatLng(lat, lng),
+                    map: map,
+                    content: createCarMarker()
+                });
+
+                map.setCenter({ lat, lng });
+                map.setZoom(15);
+
+
             } else {
                 animateMarker(marker, lat, lng);
             }
 
-            // Update path
-            path.push([lat, lng]);
-
-            if (!polyline) {
-                polyline = L.polyline(path, { color: "blue" }).addTo(map);
-            } else {
-                polyline.setLatLngs(path);
-            }
-
-        });
-
-        socket.on("trip_stopped", () => {
-            alert("Trip has ended.");
-            if (marker) {
-                marker.bindPopup("Driver has arrived").openPopup();
-            }
-        });
-
-        function focusDriver() {
-            if (driverLat && driverLng) {
-                autoFollow = true;
-                map.setView([driverLat, driverLng], 16);
-            } else {
-                alert("Driver location not available yet");
+            // ✅ Update Distance and Time Remaining
+            if (customerLocation) {
+                updateETADisplay({ lat, lng }, customerLocation);
             }
         }
 
-        function animateMarker(marker, newLat, newLng) {
+        async function updateETADisplay(start, end) {
+            try {
+                const result = await google.maps.routes.Route.computeRoutes({
+                    origin: start,
+                    destination: end,
+                    travelMode: google.maps.TravelMode.DRIVING,
+                    fields: ["legs"],
+                });
 
-            if (animationFrameId) {
-                cancelAnimationFrame(animationFrameId);
+                if (!result.routes || result.routes.length === 0) return;
+
+                // Extract first leg info
+                const leg = result.routes[0].legs[0];
+                const distanceMeters = leg.distanceMeters;
+                const durationMillis = leg.durationMillis;
+
+                // Convert to user-friendly format
+                const distanceText = `${(distanceMeters / 1000).toFixed(1)} km`;
+                const totalMinutes = Math.ceil(durationMillis / 1000 / 60);
+                const hours = Math.floor(totalMinutes / 60);
+                const minutes = totalMinutes % 60;
+
+                // Display duration nicely
+                const durationText = hours > 0 ? `${hours} hr ${minutes} min` : `${minutes} min`;
+
+                // Update overlay div
+                window.statsDiv.innerHTML = `
+            <div style="font-family: sans-serif;">
+                <div style="color: #4285F4; font-weight: bold;">Arriving in ${durationText}</div>
+                <div style="font-size: 0.8em; color: #666;">Distance: ${distanceText}</div>
+            </div>
+        `;
+
+            } catch (err) {
+                console.error("Route compute error:", err);
             }
+        }
+        // ✅ Route API (NEW)
+        async function calculateRoadRoute(start, end) {
+            if (routeCalculated) return;
 
-            const start = marker.getLatLng();
+            try {
+                const result = await google.maps.routes.Route.computeRoutes({
+                    origin: start,
+                    destination: end,
+                    travelMode: google.maps.TravelMode.DRIVING,
+                    computeAlternativeRoutes: false,
+                    fields: ["path"],
+                });
+
+                if (!result.routes || result.routes.length === 0) {
+                    console.warn("No routes found");
+                    return;
+                }
+
+                const encoded = result.routes[0].path
+
+                const decodedPath = result.routes[0].path;
+
+                new google.maps.Polyline({
+                    path: decodedPath,
+                    strokeColor: "#4285F4",
+                    strokeWeight: 5,
+                    map: map
+                });
+
+                routeCalculated = true;
+                console.log("✅ Route drawn successfully");
+
+            } catch (err) {
+                console.error("Route error:", err);
+            }
+        }
+        // ✅ Smooth animation + rotation
+        function animateMarker(marker, newLat, newLng) {
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+
+            // ✅ Get start position as plain numbers
+            const startLat = marker.position.lat()
+            const startLng = marker.position.lng()
+
+            // ✅ Compute heading for rotation
+            const heading = google.maps.geometry.spherical.computeHeading(
+                new google.maps.LatLng(startLat, startLng),
+                new google.maps.LatLng(newLat, newLng)
+            );
+
+            // Rotate the car image
+            const img = marker.content;
+            img.style.transform = `rotate(${heading}deg)`;
+
             const duration = 2000;
             const startTime = performance.now();
 
             function animate(time) {
                 const progress = Math.min((time - startTime) / duration, 1);
 
-                const lat = start.lat + (newLat - start.lat) * progress;
-                const lng = start.lng + (newLng - start.lng) * progress;
+                // ✅ Linear interpolation of lat/lng
+                const lat = startLat + (newLat - startLat) * progress;
+                const lng = startLng + (newLng - startLng) * progress;
 
-                marker.setLatLng([lat, lng]);
+                // ✅ Update marker position
+                marker.position = { lat, lng };
 
                 if (progress < 1) {
                     animationFrameId = requestAnimationFrame(animate);
@@ -158,6 +319,23 @@
             }
 
             animationFrameId = requestAnimationFrame(animate);
+        }
+        // ✅ Controls
+        function focusDriver() {
+            if (driverLat && driverLng) {
+                autoFollow = true;
+                map.setCenter({ lat: driverLat, lng: driverLng });
+                map.setZoom(16);
+            } else {
+                alert("Driver not available");
+            }
+        }
+
+        function enableFollow() {
+            autoFollow = true;
+            if (driverLat && driverLng) {
+                map.panTo({ lat: driverLat, lng: driverLng });
+            }
         }
 
     </script>

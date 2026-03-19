@@ -21,9 +21,22 @@ const io = new Server(server, {
 
 // START TRIP
 app.post("/trip/start", async (req, res) => {
-  const { tripId, driverId } = req.body;
-  await redisClient.set(`trip:${tripId}`, JSON.stringify({ driverId, status: "active" }));
-  res.json({ message: "Trip started", tripId });
+  const { tripId, driverId, customerLat, customerLng } = req.body;
+
+  if (!customerLat || !customerLng) {
+    return res.status(400).json({ error: "Customer location required" });
+  }
+  await redisClient.set(
+    `trip:${tripId}`,
+    JSON.stringify({
+      driverId,
+      customerLocation: {
+        lat: customerLat,
+        lng: customerLng
+      },
+      status: "active"
+    })
+  ); res.json({ message: "Trip started", tripId });
 });
 
 // STOP TRIP
@@ -51,12 +64,22 @@ io.on("connection", (socket) => {
 
     socket.join(`trip:${tripId}`);
 
+
+    // 🔥 GET TRIP DATA
+    const tripData = await redisClient.get(`trip:${tripId}`);
+
+    if (tripData) {
+      const trip = JSON.parse(tripData);
+
+      // ✅ Send full trip info (IMPORTANT)
+      socket.emit("trip_data", trip);
+    }
+
     const location = await redisClient.get(`driver:${driverId}:location`);
 
     if (location) {
 
       const parsed = JSON.parse(location);
-
       socket.emit("receive_location", parsed);
 
     }
