@@ -79,6 +79,15 @@
                     })()
                 });
             }
+            if (marker && customerLocation && !routeCalculated) {
+                const pos = marker.position;
+
+                calculateRoadRoute(
+                    { lat: pos.lat, lng: pos.lng },
+                    customerLocation
+                );
+            }
+
         });
 
         function initMap() {
@@ -115,6 +124,7 @@
                 });
 
                 routeCalculated = true;
+                console.log("✅ Route drawn successfully");
 
             } catch (err) {
                 console.error("Route error:", err);
@@ -181,7 +191,6 @@
         async function startTrip() {
             if (watchId !== null) return;
 
-
             startBtn.disabled = true;
             setStatus("warning", "⏳ Starting trip...");
 
@@ -191,7 +200,12 @@
                     headers: {
                         "Content-Type": "application/json"
                     },
-                    body: JSON.stringify({ tripId, driverId })
+                    body: JSON.stringify({
+                        tripId,
+                        driverId,
+                        customerLat: 25.625167,
+                        customerLng: 85.055717
+                    })
                 });
 
                 if (!res.ok) {
@@ -211,6 +225,8 @@
 
                     socket.emit("location_update", { tripId, driverId, lat, lng });
 
+                    console.log("Driver sent:", lat, lng);
+
                     const accuracy = pos.coords.accuracy;
                     addLog(`🕒 ${time} → Lat: ${lat.toFixed(5)}, Lng: ${lng.toFixed(5)} (±${accuracy}m)`);
 
@@ -226,19 +242,19 @@
                             content: createCarMarker()
                         });
 
-                        map.setCenter({ lat, lng });
-                        map.setZoom(16);
+                        map.setCenter(customerLocation);
+                        map.setZoom(14);
 
-                        if (customerLocation) {
-                            calculateRoadRoute({ lat, lng }, customerLocation);
-                        }
+
                     } else {
                         animateMarker(marker, lat, lng);
                         map.panTo({ lat, lng });
                     }
 
-                    updateETADisplay({ lat, lng }, customerLocation);
-
+                    if (customerLocation) {
+                        updateETADisplay({ lat, lng }, customerLocation);
+                    }
+                    routeCalculated = false;
 
 
                 }, (err) => {
@@ -324,8 +340,8 @@
         stopBtn.disabled = true;
 
         function animateMarker(marker, newLat, newLng) {
-            const startLat = marker.position.lat();
-            const startLng = marker.position.lng();
+            const startLat = marker.position.lat;
+            const startLng = marker.position.lng;
 
             const duration = 1000;
             const startTime = performance.now();

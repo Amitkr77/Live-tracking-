@@ -129,23 +129,12 @@
             map.controls[google.maps.ControlPosition.TOP_LEFT].push(infoDiv);
             window.statsDiv = infoDiv;
 
-            // Destination marker
-            // new google.maps.marker.AdvancedMarkerElement({
-            //     position: customerLocation,
-            //     map: map,
-            //     content: (() => {
-            //         const el = document.createElement("div");
-            //         el.innerText = "📍";
-            //         el.style.fontSize = "24px";
-            //         return el;
-            //     })()
-            // });
-
             map.addListener("dragstart", () => {
                 autoFollow = false;
             });
 
-            setupSocket();
+                setupSocket();
+            
         }
 
         // ✅ Socket Setup
@@ -153,6 +142,8 @@
             socket.emit("join_trip", { tripId, driverId });
 
             socket.on("receive_location", (data) => {
+                console.log(data);
+
                 handleLocationUpdate(data);
             });
 
@@ -176,7 +167,7 @@
         function handleLocationUpdate(data) {
             const { lat, lng } = data;
             if (!lat || !lng) return;
-            console.log("Recivede locaiton: ", lat, lng);
+            console.log("Reciveded locaiton: ", lat, lng);
 
 
             driverLat = lat;
@@ -201,6 +192,10 @@
 
             } else {
                 animateMarker(marker, lat, lng);
+            }
+
+            if (customerLocation && !routeCalculated) {
+                calculateRoadRoute({ lat, lng }, customerLocation);
             }
 
             // ✅ Update Distance and Time Remaining
@@ -287,8 +282,8 @@
             if (animationFrameId) cancelAnimationFrame(animationFrameId);
 
             // ✅ Get start position as plain numbers
-            const startLat = marker.position.lat()
-            const startLng = marker.position.lng()
+            const startLat = marker.position.lat
+            const startLng = marker.position.lng
 
             // ✅ Compute heading for rotation
             const heading = google.maps.geometry.spherical.computeHeading(

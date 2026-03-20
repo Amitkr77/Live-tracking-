@@ -64,7 +64,6 @@ io.on("connection", (socket) => {
 
     socket.join(`trip:${tripId}`);
 
-
     // 🔥 GET TRIP DATA
     const tripData = await redisClient.get(`trip:${tripId}`);
 
@@ -72,7 +71,9 @@ io.on("connection", (socket) => {
       const trip = JSON.parse(tripData);
 
       // ✅ Send full trip info (IMPORTANT)
-      socket.emit("trip_data", trip);
+      socket.emit("trip_data", {
+        customerLocation: trip.customerLocation
+      });
     }
 
     const location = await redisClient.get(`driver:${driverId}:location`);
