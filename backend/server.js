@@ -36,7 +36,7 @@ app.post("/trip/start", async (req, res) => {
       },
       status: "active"
     })
-  ); res.json({ message: "Trip started", tripId });
+  ); res.json({ success: true, message: "Trip started", tripId });
 });
 
 // STOP TRIP
@@ -49,6 +49,7 @@ app.post("/trip/stop", async (req, res) => {
   io.to(`trip:${tripId}`).emit("trip_stopped");
 
   res.json({
+    success: true,
     message: "Trip stopped"
   });
 
