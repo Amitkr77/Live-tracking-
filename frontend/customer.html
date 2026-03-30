@@ -1,179 +1,643 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 
 <head>
     <meta charset="UTF-8">
-    <title>Customer - Live Tracking</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Tracking — Customer View</title>
+    <meta name="description" content="Track your driver in real-time with live GPS updates and ETA estimates.">
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
 
     <!-- Tailwind -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#eef2ff',
+                            100: '#e0e7ff',
+                            200: '#c7d2fe',
+                            300: '#a5b4fc',
+                            400: '#818cf8',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            700: '#4338ca',
+                            800: '#3730a3',
+                            900: '#312e81',
+                        },
+                        surface: {
+                            dark: '#0f172a',
+                            card: '#1e293b',
+                            hover: '#334155',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Socket (load before Maps since Maps callback triggers socket setup) -->
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 
     <!-- Google Maps -->
     <script async defer
         src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBo9B-easm-3SM-2dFvqaT3WBnmniU6qFk&loading=async&libraries=geometry,marker,routes&callback=initMap">
-        </script>
-
-    <!-- Socket -->
-    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    </script>
 
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background: #0f172a;
+            overflow: hidden;
+        }
+
         #map {
-            height: 500px;
+            width: 100%;
+            height: 100vh;
+        }
+
+        /* Glassmorphism panel */
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(99, 102, 241, 0.15);
+        }
+
+        .glass-light {
+            background: rgba(30, 41, 59, 0.75);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        /* Pulsing dot animation */
+        @keyframes pulse-ring {
+            0% {
+                transform: scale(0.8);
+                opacity: 1;
+            }
+
+            100% {
+                transform: scale(2.2);
+                opacity: 0;
+            }
+        }
+
+        @keyframes pulse-dot {
+
+            0%,
+            100% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.15);
+            }
+        }
+
+        .pulse-indicator {
+            position: relative;
+        }
+
+        .pulse-indicator::before {
+            content: '';
+            position: absolute;
+            inset: -4px;
+            border-radius: 50%;
+            background: currentColor;
+            animation: pulse-ring 1.8s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+            opacity: 0.3;
+        }
+
+        .pulse-indicator .dot {
+            animation: pulse-dot 1.8s ease-in-out infinite;
+        }
+
+        /* Slide-in animation */
+        @keyframes slideInLeft {
+            from {
+                transform: translateX(-100%);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideInUp {
+            from {
+                transform: translateY(30px);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+
+            to {
+                opacity: 1;
+            }
+        }
+
+        .animate-slide-in-left {
+            animation: slideInLeft 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        .animate-slide-in-up {
+            animation: slideInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        .animate-fade-in {
+            animation: fadeIn 0.6s ease forwards;
+        }
+
+        /* Button hover glow */
+        .btn-glow {
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .btn-glow::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), transparent);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .btn-glow:hover::after {
+            opacity: 1;
+        }
+
+        .btn-glow:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 8px 25px -5px rgba(99, 102, 241, 0.4);
+        }
+
+        .btn-glow:active {
+            transform: translateY(0);
+        }
+
+        /* Status shimmer */
+        @keyframes shimmer {
+            0% {
+                background-position: -200% 0;
+            }
+
+            100% {
+                background-position: 200% 0;
+            }
+        }
+
+        .shimmer-text {
+            background: linear-gradient(90deg, #94a3b8, #e2e8f0, #94a3b8);
+            background-size: 200% auto;
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: shimmer 3s linear infinite;
+        }
+
+        /* Gradient border for ETA card */
+        .gradient-border {
+            position: relative;
+        }
+
+        .gradient-border::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            padding: 1px;
+            background: linear-gradient(135deg, #6366f1, #8b5cf6, #a78bfa);
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(99, 102, 241, 0.3);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(99, 102, 241, 0.5);
+        }
+
+        /* Connection indicator */
+        .connection-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            transition: background-color 0.3s;
+        }
+
+        .connection-dot.connected {
+            background: #10b981;
+            box-shadow: 0 0 6px rgba(16, 185, 129, 0.5);
+        }
+
+        .connection-dot.disconnected {
+            background: #ef4444;
+            box-shadow: 0 0 6px rgba(239, 68, 68, 0.5);
+        }
+
+        /* Responsive bottom sheet for mobile */
+        @media (max-width: 640px) {
+            .tracking-panel {
+                position: fixed !important;
+                left: 0 !important;
+                right: 0 !important;
+                bottom: 0 !important;
+                top: auto !important;
+                width: 100% !important;
+                max-height: 45vh;
+                border-radius: 24px 24px 0 0 !important;
+                animation: slideInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+            }
         }
     </style>
 </head>
 
-<body class="bg-gray-100 min-h-screen flex flex-col">
+<body>
+    <!-- Map (Full Screen Background) -->
+    <div id="map"></div>
 
-    <!-- Header -->
-    <div class="bg-white shadow-md px-6 py-4 flex justify-between items-center">
-        <h2 class="text-xl font-bold text-gray-800">📍 Driver Live Tracking</h2>
+    <!-- Top Bar -->
+    <div id="top-bar" class="fixed top-0 left-0 right-0 z-20 animate-fade-in"
+        style="animation-delay: 0.2s; opacity: 0;">
+        <div
+            class="glass-panel mx-4 mt-4 rounded-2xl px-5 py-3 flex items-center justify-between shadow-2xl shadow-black/20">
+            <!-- Logo / Title -->
+            <div class="flex items-center gap-3">
+                <div
+                    class="w-9 h-9 rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center shadow-lg shadow-brand-500/25">
+                    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z">
+                        </path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="text-white font-bold text-sm tracking-tight">Live Tracking</h1>
+                    <div class="flex items-center gap-1.5">
+                        <span id="connection-dot" class="connection-dot disconnected"></span>
+                        <p id="connection-text" class="text-slate-400 text-[11px] font-medium">Connecting...</p>
+                    </div>
+                </div>
+            </div>
 
-        <div id="status" class="text-sm font-semibold text-yellow-600">
-            ⏳ Waiting for driver...
+            <!-- Status Badge -->
+            <div id="status-badge"
+                class="flex items-center gap-2 bg-amber-500/15 text-amber-400 px-3 py-1.5 rounded-full text-xs font-semibold transition-all duration-500">
+                <span class="pulse-indicator text-amber-400">
+                    <span class="dot w-2 h-2 bg-amber-400 rounded-full block"></span>
+                </span>
+                <span id="status-text">Waiting for driver</span>
+            </div>
         </div>
     </div>
 
-    <!-- Controls -->
-    <div class="p-4 flex gap-3 bg-gray-50 border-b">
-        <button onclick="focusDriver()" class="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg shadow">
-            🎯 Focus Driver
-        </button>
+    <!-- Tracking Info Panel (Left Side / Bottom Sheet on Mobile) -->
+    <div class="tracking-panel fixed top-28 left-4 z-10 w-80 animate-slide-in-left"
+        style="animation-delay: 0.4s; opacity: 0;">
+        <div class="glass-panel rounded-2xl shadow-2xl shadow-black/30 overflow-hidden">
 
-        <button onclick="enableFollow()" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg shadow">
-            🔄 Auto Follow
-        </button>
+            <!-- ETA Section -->
+            <div id="eta-section" class="p-5 border-b border-white/5">
+                <div class="flex items-center gap-2 mb-3">
+                    <div class="w-6 h-6 rounded-lg bg-brand-500/20 flex items-center justify-center">
+                        <svg class="w-3.5 h-3.5 text-brand-400" fill="none" stroke="currentColor"
+                            viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                    </div>
+                    <span class="text-slate-400 text-xs font-semibold uppercase tracking-wider">Estimated
+                        Arrival</span>
+                </div>
+
+                <div id="eta-display" class="space-y-1">
+                    <p class="shimmer-text text-sm font-medium">Calculating route...</p>
+                </div>
+            </div>
+
+            <!-- Trip Info -->
+            <div id="trip-info" class="p-5 border-b border-white/5">
+                <div class="grid grid-cols-2 gap-3">
+                    <!-- Distance Card -->
+                    <div class="glass-light rounded-xl p-3 gradient-border">
+                        <div class="flex items-center gap-1.5 mb-1">
+                            <svg class="w-3 h-3 text-brand-400" fill="none" stroke="currentColor"
+                                viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
+                            </svg>
+                            <span
+                                class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">Distance</span>
+                        </div>
+                        <p id="distance-value" class="text-white font-bold text-lg">—</p>
+                    </div>
+
+                    <!-- Time Card -->
+                    <div class="glass-light rounded-xl p-3 gradient-border">
+                        <div class="flex items-center gap-1.5 mb-1">
+                            <svg class="w-3 h-3 text-purple-400" fill="none" stroke="currentColor"
+                                viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                            </svg>
+                            <span class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">Time</span>
+                        </div>
+                        <p id="time-value" class="text-white font-bold text-lg">—</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Driver Info -->
+            <div class="p-5 border-b border-white/5">
+                <div class="flex items-center gap-3">
+                    <div
+                        class="w-10 h-10 rounded-full bg-gradient-to-br from-brand-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-brand-500/20">
+                        D
+                    </div>
+                    <div class="flex-1">
+                        <p class="text-white font-semibold text-sm">Driver</p>
+                        <p class="text-slate-400 text-xs">Trip #123</p>
+                    </div>
+                    <div id="driver-speed" class="text-right">
+                        <p class="text-slate-500 text-[10px] font-semibold uppercase">Last Update</p>
+                        <p id="last-update-time" class="text-slate-300 text-xs font-medium">—</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="p-4 flex gap-2">
+                <button id="btn-focus" onclick="focusDriver()"
+                    class="btn-glow flex-1 bg-brand-600 hover:bg-brand-500 text-white px-4 py-2.5 rounded-xl font-semibold text-xs flex items-center justify-center gap-2 transition-all duration-300">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                    </svg>
+                    Focus
+                </button>
+
+                <button id="btn-follow" onclick="toggleFollow()"
+                    class="btn-glow flex-1 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 rounded-xl font-semibold text-xs flex items-center justify-center gap-2 transition-all duration-300">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122">
+                        </path>
+                    </svg>
+                    <span id="follow-label">Auto Follow</span>
+                </button>
+            </div>
+
+        </div>
     </div>
 
-    <!-- Map -->
-    <div class="flex-1 p-4">
-        <div id="map" class="w-full h-full rounded-2xl shadow-lg border"></div>
-    </div>
+    <!-- Recenter FAB (bottom right) -->
+    <button onclick="focusDriver()" id="recenter-fab"
+        class="fixed bottom-8 right-8 z-20 w-12 h-12 glass-panel rounded-full flex items-center justify-center shadow-2xl shadow-black/30 hover:bg-brand-600/20 transition-all duration-300 hover:scale-110 active:scale-95 animate-fade-in"
+        style="animation-delay: 0.6s; opacity: 0;" title="Recenter on driver">
+        <svg class="w-5 h-5 text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z">
+            </path>
+        </svg>
+    </button>
 
     <script>
-        const socket = io("https://live-tracking-gf97.onrender.com");
-
+        // ─── CONFIG ──────────────────────────────────────────
+        const SERVER_URL = "https://live-tracking-gf97.onrender.com";
         const tripId = "123";
         const driverId = "driver_1";
 
-        // const customerLocation = { lat: 25.625167, lng: 85.055717 };
+        // ─── SOCKET WITH OPTIMIZED SETTINGS ──────────────────
+        const socket = io(SERVER_URL, {
+            transports: ["websocket", "polling"],  // WebSocket first for speed
+            reconnection: true,
+            reconnectionAttempts: Infinity,
+            reconnectionDelay: 1000,
+            reconnectionDelayMax: 10000,
+            timeout: 20000,
+        });
+
+        // ─── STATE ───────────────────────────────────────────
         let customerLocation = null;
         let customerMarker = null;
+        let map = null;
+        let marker = null;
+        let driverLat = null;
+        let driverLng = null;
+        let autoFollow = true;
+        let routeCalculated = false;
+        let routePolyline = null;
+        let routeShadow = null;
+        let animationFrameId = null;
+        let lastETACall = 0;
+        let etaPending = false;
+        const ETA_THROTTLE_MS = 10000; // Only call ETA API every 10 seconds
 
+        // ─── DOM ELEMENTS ────────────────────────────────────
+        const statusBadge = document.getElementById("status-badge");
+        const statusText = document.getElementById("status-text");
+        const etaDisplay = document.getElementById("eta-display");
+        const distanceValue = document.getElementById("distance-value");
+        const timeValue = document.getElementById("time-value");
+        const connectionDot = document.getElementById("connection-dot");
+        const connectionText = document.getElementById("connection-text");
+        const lastUpdateEl = document.getElementById("last-update-time");
+        const followLabel = document.getElementById("follow-label");
+
+        // ─── CONNECTION STATUS ───────────────────────────────
+        socket.on("connect", () => {
+            connectionDot.className = "connection-dot connected";
+            connectionText.textContent = "Connected";
+            console.log("✅ Socket connected");
+        });
+
+        socket.on("disconnect", (reason) => {
+            connectionDot.className = "connection-dot disconnected";
+            connectionText.textContent = "Reconnecting...";
+            console.warn("❌ Socket disconnected:", reason);
+        });
+
+        socket.on("reconnect", (attempt) => {
+            connectionDot.className = "connection-dot connected";
+            connectionText.textContent = "Connected";
+            // Re-join trip on reconnect
+            socket.emit("join_trip", { tripId, driverId });
+            console.log("🔄 Reconnected after", attempt, "attempts");
+        });
+
+        socket.on("connect_error", (err) => {
+            connectionDot.className = "connection-dot disconnected";
+            connectionText.textContent = "Connection error";
+            console.error("Socket error:", err.message);
+        });
+
+        // ─── TRIP DATA HANDLER ───────────────────────────────
         socket.on("trip_data", (data) => {
-            console.log("Trip data:", data);
-
             if (!data.customerLocation) return;
             customerLocation = data.customerLocation;
 
-
-            // 👉 create marker if map ready
             if (map && customerLocation && !customerMarker) {
-                customerMarker = new google.maps.marker.AdvancedMarkerElement({
-                    position: customerLocation,
-                    map: map,
-                    content: (() => {
-                        const el = document.createElement("div");
-                        el.innerText = "📍";
-                        el.style.fontSize = "24px";
-                        return el;
-                    })()
-                });
+                createCustomerMarker();
             }
 
             if (marker && customerLocation && !routeCalculated) {
                 const pos = marker.position;
                 calculateRoadRoute(
-                    { lat: pos.lat(), lng: pos.lng() },
+                    { lat: typeof pos.lat === 'function' ? pos.lat() : pos.lat, lng: typeof pos.lng === 'function' ? pos.lng() : pos.lng },
                     customerLocation
                 );
             }
-
         });
 
-        let map;
-        let marker;
-        // let directionsService, directionsRenderer;
-        let driverLat = null;
-        let driverLng = null;
-        let autoFollow = true;
-        let routeCalculated = false;
-        let animationFrameId;
+        // ─── STATUS UPDATES ──────────────────────────────────
+        function setStatus(text, type = "info") {
+            const styles = {
+                waiting: { bg: "bg-amber-500/15", text: "text-amber-400", dot: "bg-amber-400" },
+                moving: { bg: "bg-blue-500/15", text: "text-blue-400", dot: "bg-blue-400" },
+                arrived: { bg: "bg-emerald-500/15", text: "text-emerald-400", dot: "bg-emerald-400" },
+                error: { bg: "bg-red-500/15", text: "text-red-400", dot: "bg-red-400" },
+                info: { bg: "bg-slate-500/15", text: "text-slate-400", dot: "bg-slate-400" },
+            };
 
-        const statusDiv = document.getElementById("status");
+            const style = styles[type] || styles.info;
+            statusBadge.className = `flex items-center gap-2 ${style.bg} ${style.text} px-3 py-1.5 rounded-full text-xs font-semibold transition-all duration-500`;
+            statusText.textContent = text;
 
-        // ✅ Status
-        function setStatus(text, color = "text-green-600") {
-            statusDiv.className = `text-sm font-semibold ${color}`;
-            statusDiv.innerText = text;
+            const dot = statusBadge.querySelector('.dot');
+            if (dot) dot.className = `dot w-2 h-2 ${style.dot} rounded-full block`;
         }
 
-        // ✅ Init Map (IMPORTANT)
+        // ─── INIT MAP ────────────────────────────────────────
         async function initMap() {
             map = new google.maps.Map(document.getElementById("map"), {
                 center: { lat: 20.5937, lng: 78.9629 },
                 zoom: 5,
-                mapId: "4dd6763787209b1ccbdfd3ca"
+                mapId: "4dd6763787209b1ccbdfd3ca",
+                disableDefaultUI: true,
+                zoomControl: false,
+                mapTypeControl: false,
+                streetViewControl: false,
+                fullscreenControl: false,
+                gestureHandling: "greedy", // Better touch handling on mobile
             });
-
-
-            // Create a simple overlay for Distance/Time
-            const infoDiv = document.createElement("div");
-            infoDiv.id = "stats-control";
-            infoDiv.style.backgroundColor = "white";
-            infoDiv.style.padding = "10px";
-            infoDiv.style.margin = "10px";
-            infoDiv.style.borderRadius = "5px";
-            infoDiv.style.boxShadow = "0 2px 6px rgba(0,0,0,.3)";
-            infoDiv.innerHTML = "<b>Calculating ETA...</b>";
-            map.controls[google.maps.ControlPosition.TOP_LEFT].push(infoDiv);
-            window.statsDiv = infoDiv;
 
             map.addListener("dragstart", () => {
                 autoFollow = false;
+                updateFollowButton();
             });
 
-                setupSocket();
-            
+            setupSocket();
         }
 
-        // ✅ Socket Setup
+        // ─── SOCKET SETUP ────────────────────────────────────
         function setupSocket() {
             socket.emit("join_trip", { tripId, driverId });
 
             socket.on("receive_location", (data) => {
-                console.log(data);
-
                 handleLocationUpdate(data);
             });
 
             socket.on("trip_stopped", () => {
-                setStatus("🚗 Driver arrived", "text-green-600");
-                alert("Trip has ended.");
+                setStatus("Driver arrived!", "arrived");
             });
         }
 
-        // ✅ Car marker
-        function createCarMarker() {
-            const img = document.createElement("img");
-            img.src = "https://res.cloudinary.com/dbl9y4zkr/image/upload/v1773823755/car_n4nchm.png";
-            img.style.width = "40px";
-            img.style.height = "40px";
-            img.style.transformOrigin = "center";
-            return img;
+        // ─── CREATE CUSTOMER MARKER ──────────────────────────
+        function createCustomerMarker() {
+            const el = document.createElement("div");
+            el.innerHTML = `
+                <div style="position:relative; display:flex; align-items:center; justify-content:center;">
+                    <div style="width:16px; height:16px; background: #6366f1; border-radius:50%; border: 3px solid white; box-shadow: 0 2px 8px rgba(99,102,241,0.5);"></div>
+                    <div style="position:absolute; width:32px; height:32px; border-radius:50%; border: 2px solid rgba(99,102,241,0.3); animation: pulse-ring 2s infinite;"></div>
+                </div>
+            `;
+            customerMarker = new google.maps.marker.AdvancedMarkerElement({
+                position: customerLocation,
+                map: map,
+                content: el,
+            });
         }
 
-        // ✅ Handle location
+        // ─── CREATE CAR MARKER ───────────────────────────────
+        function createCarMarker() {
+            const wrapper = document.createElement("div");
+            wrapper.style.position = "relative";
+            wrapper.style.display = "flex";
+            wrapper.style.alignItems = "center";
+            wrapper.style.justifyContent = "center";
+
+            const img = document.createElement("img");
+            img.src = "https://res.cloudinary.com/dbl9y4zkr/image/upload/v1773823755/car_n4nchm.png";
+            img.style.width = "44px";
+            img.style.height = "44px";
+            img.style.transformOrigin = "center";
+            img.style.filter = "drop-shadow(0 4px 8px rgba(0,0,0,0.3))";
+            // Use will-change for GPU-accelerated rotation
+            img.style.willChange = "transform";
+            img.style.transition = "transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94)";
+
+            wrapper.appendChild(img);
+            return wrapper;
+        }
+
+        // ─── HANDLE LOCATION UPDATE ──────────────────────────
         function handleLocationUpdate(data) {
             const { lat, lng } = data;
-            if (!lat || !lng) return;
-            console.log("Reciveded locaiton: ", lat, lng);
-
+            if (lat == null || lng == null) return;
 
             driverLat = lat;
             driverLng = lng;
 
-            setStatus("📡 Driver moving...", "text-blue-600");
+            setStatus("Driver is on the way", "moving");
+
+            // Update last seen timestamp
+            lastUpdateEl.textContent = new Date().toLocaleTimeString();
 
             if (autoFollow) {
                 map.panTo({ lat, lng });
@@ -185,23 +649,33 @@
                     map: map,
                     content: createCarMarker()
                 });
-
                 map.setCenter({ lat, lng });
                 map.setZoom(15);
-
-
             } else {
                 animateMarker(marker, lat, lng);
             }
 
+            // Draw route if not yet drawn
             if (customerLocation && !routeCalculated) {
                 calculateRoadRoute({ lat, lng }, customerLocation);
             }
 
-            // ✅ Update Distance and Time Remaining
+            // Throttled ETA update — don't call Routes API on every location ping
             if (customerLocation) {
-                updateETADisplay({ lat, lng }, customerLocation);
+                throttledETAUpdate({ lat, lng }, customerLocation);
             }
+        }
+
+        // ─── THROTTLED ETA ───────────────────────────────────
+        function throttledETAUpdate(start, end) {
+            const now = Date.now();
+            if (now - lastETACall < ETA_THROTTLE_MS || etaPending) return;
+
+            lastETACall = now;
+            etaPending = true;
+            updateETADisplay(start, end).finally(() => {
+                etaPending = false;
+            });
         }
 
         async function updateETADisplay(start, end) {
@@ -215,33 +689,32 @@
 
                 if (!result.routes || result.routes.length === 0) return;
 
-                // Extract first leg info
                 const leg = result.routes[0].legs[0];
                 const distanceMeters = leg.distanceMeters;
                 const durationMillis = leg.durationMillis;
 
-                // Convert to user-friendly format
-                const distanceText = `${(distanceMeters / 1000).toFixed(1)} km`;
+                const distanceKm = (distanceMeters / 1000).toFixed(1);
                 const totalMinutes = Math.ceil(durationMillis / 1000 / 60);
                 const hours = Math.floor(totalMinutes / 60);
                 const minutes = totalMinutes % 60;
 
-                // Display duration nicely
-                const durationText = hours > 0 ? `${hours} hr ${minutes} min` : `${minutes} min`;
+                const durationText = hours > 0 ? `${hours}h ${minutes}m` : `${minutes} min`;
 
-                // Update overlay div
-                window.statsDiv.innerHTML = `
-            <div style="font-family: sans-serif;">
-                <div style="color: #4285F4; font-weight: bold;">Arriving in ${durationText}</div>
-                <div style="font-size: 0.8em; color: #666;">Distance: ${distanceText}</div>
-            </div>
-        `;
+                // Update panel values with number animation
+                distanceValue.textContent = `${distanceKm} km`;
+                timeValue.textContent = durationText;
+
+                etaDisplay.innerHTML = `
+                    <p class="text-white font-bold text-2xl">${durationText}</p>
+                    <p class="text-slate-400 text-xs">${distanceKm} km remaining</p>
+                `;
 
             } catch (err) {
                 console.error("Route compute error:", err);
             }
         }
-        // ✅ Route API (NEW)
+
+        // ─── ROUTE DRAWING ───────────────────────────────────
         async function calculateRoadRoute(start, end) {
             if (routeCalculated) return;
 
@@ -259,80 +732,115 @@
                     return;
                 }
 
-                const encoded = result.routes[0].path
-
                 const decodedPath = result.routes[0].path;
 
-                new google.maps.Polyline({
+                // Remove old polylines if they exist
+                if (routeShadow) routeShadow.setMap(null);
+                if (routePolyline) routePolyline.setMap(null);
+
+                // Shadow polyline (drawn first = behind)
+                routeShadow = new google.maps.Polyline({
                     path: decodedPath,
-                    strokeColor: "#4285F4",
+                    strokeColor: "#312e81",
+                    strokeWeight: 8,
+                    strokeOpacity: 0.3,
+                    map: map
+                });
+
+                // Main route polyline
+                routePolyline = new google.maps.Polyline({
+                    path: decodedPath,
+                    strokeColor: "#6366f1",
                     strokeWeight: 5,
+                    strokeOpacity: 0.8,
                     map: map
                 });
 
                 routeCalculated = true;
-                console.log("✅ Route drawn successfully");
+                console.log("✅ Route drawn");
 
             } catch (err) {
                 console.error("Route error:", err);
             }
         }
-        // ✅ Smooth animation + rotation
+
+        // ─── SMOOTH MARKER ANIMATION ─────────────────────────
         function animateMarker(marker, newLat, newLng) {
             if (animationFrameId) cancelAnimationFrame(animationFrameId);
 
-            // ✅ Get start position as plain numbers
-            const startLat = marker.position.lat
-            const startLng = marker.position.lng
+            const pos = marker.position;
+            const startLat = typeof pos.lat === 'function' ? pos.lat() : pos.lat;
+            const startLng = typeof pos.lng === 'function' ? pos.lng() : pos.lng;
 
-            // ✅ Compute heading for rotation
+            // Skip animation if distance is negligible (prevents jitter)
+            const dlat = Math.abs(newLat - startLat);
+            const dlng = Math.abs(newLng - startLng);
+            if (dlat < 0.000001 && dlng < 0.000001) return;
+
+            // Compute and apply heading rotation
             const heading = google.maps.geometry.spherical.computeHeading(
                 new google.maps.LatLng(startLat, startLng),
                 new google.maps.LatLng(newLat, newLng)
             );
 
-            // Rotate the car image
-            const img = marker.content;
-            img.style.transform = `rotate(${heading}deg)`;
+            const img = marker.content.querySelector("img");
+            if (img) {
+                img.style.transform = `rotate(${heading}deg)`;
+            }
 
-            const duration = 2000;
+            const duration = 1800; // Slightly faster than update interval for smooth overlap
             const startTime = performance.now();
 
             function animate(time) {
                 const progress = Math.min((time - startTime) / duration, 1);
+                // Ease out cubic for natural deceleration
+                const eased = 1 - Math.pow(1 - progress, 3);
 
-                // ✅ Linear interpolation of lat/lng
-                const lat = startLat + (newLat - startLat) * progress;
-                const lng = startLng + (newLng - startLng) * progress;
+                const lat = startLat + (newLat - startLat) * eased;
+                const lng = startLng + (newLng - startLng) * eased;
 
-                // ✅ Update marker position
                 marker.position = { lat, lng };
 
                 if (progress < 1) {
                     animationFrameId = requestAnimationFrame(animate);
+                } else {
+                    animationFrameId = null;
                 }
             }
 
             animationFrameId = requestAnimationFrame(animate);
         }
-        // ✅ Controls
+
+        // ─── CONTROLS ────────────────────────────────────────
         function focusDriver() {
             if (driverLat && driverLng) {
                 autoFollow = true;
+                updateFollowButton();
                 map.setCenter({ lat: driverLat, lng: driverLng });
                 map.setZoom(16);
-            } else {
-                alert("Driver not available");
             }
         }
 
-        function enableFollow() {
-            autoFollow = true;
-            if (driverLat && driverLng) {
+        function toggleFollow() {
+            autoFollow = !autoFollow;
+            updateFollowButton();
+            if (autoFollow && driverLat && driverLng) {
                 map.panTo({ lat: driverLat, lng: driverLng });
             }
         }
 
+        function updateFollowButton() {
+            const btn = document.getElementById("btn-follow");
+            if (autoFollow) {
+                btn.classList.remove("bg-emerald-600", "hover:bg-emerald-500");
+                btn.classList.add("bg-emerald-700", "ring-2", "ring-emerald-400/30");
+                followLabel.textContent = "Following";
+            } else {
+                btn.classList.add("bg-emerald-600", "hover:bg-emerald-500");
+                btn.classList.remove("bg-emerald-700", "ring-2", "ring-emerald-400/30");
+                followLabel.textContent = "Auto Follow";
+            }
+        }
     </script>
 
 </body>

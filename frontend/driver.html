@@ -1,106 +1,596 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 
 <head>
     <meta charset="UTF-8">
-    <title>Driver Tracking</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Driver Panel — Live Tracking</title>
+    <meta name="description" content="Driver control panel for live trip tracking with GPS broadcasting.">
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
 
     <!-- Tailwind -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#eef2ff',
+                            100: '#e0e7ff',
+                            200: '#c7d2fe',
+                            300: '#a5b4fc',
+                            400: '#818cf8',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            700: '#4338ca',
+                            800: '#3730a3',
+                            900: '#312e81',
+                        },
+                        surface: {
+                            dark: '#0f172a',
+                            card: '#1e293b',
+                            hover: '#334155',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Socket -->
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 
     <!-- Google Maps -->
     <script async defer
         src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBo9B-easm-3SM-2dFvqaT3WBnmniU6qFk&loading=async&libraries=geometry,marker,routes&callback=initMap">
-        </script>
+    </script>
 
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background: #0f172a;
+            min-height: 100vh;
+        }
+
+        /* Glassmorphism */
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(99, 102, 241, 0.12);
+        }
+
+        .glass-light {
+            background: rgba(30, 41, 59, 0.6);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        /* Glow button */
+        .btn-glow {
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .btn-glow::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+            transition: left 0.5s;
+        }
+
+        .btn-glow:hover::before {
+            left: 100%;
+        }
+
+        .btn-glow:hover {
+            transform: translateY(-2px);
+        }
+
+        .btn-glow:active {
+            transform: translateY(0) scale(0.98);
+        }
+
+        .btn-start {
+            background: linear-gradient(135deg, #059669, #10b981);
+            box-shadow: 0 8px 32px -4px rgba(16, 185, 129, 0.35);
+        }
+
+        .btn-start:hover {
+            box-shadow: 0 12px 40px -4px rgba(16, 185, 129, 0.5);
+        }
+
+        .btn-stop {
+            background: linear-gradient(135deg, #dc2626, #ef4444);
+            box-shadow: 0 8px 32px -4px rgba(239, 68, 68, 0.35);
+        }
+
+        .btn-stop:hover {
+            box-shadow: 0 12px 40px -4px rgba(239, 68, 68, 0.5);
+        }
+
+        .btn-disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            pointer-events: none;
+            transform: none !important;
+            box-shadow: none !important;
+        }
+
+        /* Animations */
+        @keyframes slideUp {
+            from {
+                transform: translateY(20px);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+
+            to {
+                opacity: 1;
+            }
+        }
+
+        @keyframes pulse-ring {
+            0% {
+                transform: scale(0.8);
+                opacity: 1;
+            }
+
+            100% {
+                transform: scale(2.2);
+                opacity: 0;
+            }
+        }
+
+        @keyframes pulse-dot {
+
+            0%,
+            100% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.15);
+            }
+        }
+
+        @keyframes ripple {
+            0% {
+                box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.3);
+            }
+
+            70% {
+                box-shadow: 0 0 0 20px rgba(16, 185, 129, 0);
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+            }
+        }
+
+        .animate-slide-up {
+            animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        .animate-fade {
+            animation: fadeIn 0.6s ease forwards;
+        }
+
+        .pulse-indicator {
+            position: relative;
+        }
+
+        .pulse-indicator::before {
+            content: '';
+            position: absolute;
+            inset: -4px;
+            border-radius: 50%;
+            background: currentColor;
+            animation: pulse-ring 1.8s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+            opacity: 0.3;
+        }
+
+        .pulse-indicator .dot {
+            animation: pulse-dot 1.8s ease-in-out infinite;
+        }
+
+        .ripple-active {
+            animation: ripple 2s ease-out infinite;
+        }
+
+        /* Gradient border */
+        .gradient-border {
+            position: relative;
+        }
+
+        .gradient-border::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            padding: 1px;
+            background: linear-gradient(135deg, #6366f1, #8b5cf6, #a78bfa);
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+        }
+
+        /* Log entries */
+        .log-entry {
+            animation: slideUp 0.3s ease forwards;
+            border-left: 2px solid #334155;
+            transition: border-color 0.3s;
+        }
+
+        .log-entry:first-child {
+            border-left-color: #6366f1;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(99, 102, 241, 0.3);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(99, 102, 241, 0.5);
+        }
+
+        /* Connection indicator */
+        .connection-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            display: inline-block;
+            transition: background-color 0.3s;
+        }
+
+        .connection-dot.connected {
+            background: #10b981;
+            box-shadow: 0 0 6px rgba(16, 185, 129, 0.5);
+        }
+
+        .connection-dot.disconnected {
+            background: #ef4444;
+            box-shadow: 0 0 6px rgba(239, 68, 68, 0.5);
+        }
+
+        /* Ambient bg gradient */
+        .ambient-bg {
+            position: fixed;
+            inset: 0;
+            z-index: -1;
+            background:
+                radial-gradient(ellipse at 20% 0%, rgba(99, 102, 241, 0.08) 0%, transparent 60%),
+                radial-gradient(ellipse at 80% 100%, rgba(139, 92, 246, 0.06) 0%, transparent 60%),
+                #0f172a;
+        }
+    </style>
 </head>
 
-<body class="bg-gradient-to-br from-gray-100 to-gray-200 min-h-screen flex items-center justify-center">
+<body class="min-h-screen flex flex-col lg:flex-row">
 
-    <div class="bg-white shadow-2xl rounded-2xl p-6 w-full max-w-md">
+    <div class="ambient-bg"></div>
 
-        <h2 class="text-2xl font-bold text-center mb-4 text-gray-800">
-            🚗 Driver Tracking
-        </h2>
+    <!-- Left Panel: Driver Controls -->
+    <div class="w-full lg:w-[420px] flex-shrink-0 p-4 lg:p-6 flex flex-col gap-4 lg:gap-5 overflow-y-auto lg:h-screen">
 
-        <!-- Status -->
-        <div id="status" class="text-center mb-4 text-sm font-semibold px-3 py-2 rounded-lg bg-red-100 text-red-600">
-            ❌ Trip Stopped
+        <!-- Header -->
+        <div class="animate-slide-up" style="animation-delay: 0.1s; opacity: 0;">
+            <div class="glass-panel rounded-2xl p-5 shadow-2xl shadow-black/20">
+                <div class="flex items-center gap-3 mb-4">
+                    <div
+                        class="w-11 h-11 rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center shadow-lg shadow-brand-500/30">
+                        <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m-4 0a2 2 0 114 0m6 0a2 2 0 104 0m-4 0a2 2 0 114 0">
+                            </path>
+                        </svg>
+                    </div>
+                    <div>
+                        <h1 class="text-white font-bold text-lg tracking-tight">Driver Panel</h1>
+                        <div class="flex items-center gap-1.5">
+                            <span id="connection-dot" class="connection-dot disconnected"></span>
+                            <p id="connection-text" class="text-slate-400 text-xs font-medium">Connecting...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Status Badge -->
+                <div id="status"
+                    class="flex items-center gap-2 bg-red-500/10 text-red-400 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-500">
+                    <span class="pulse-indicator text-red-400">
+                        <span class="dot w-2 h-2 bg-red-400 rounded-full block"></span>
+                    </span>
+                    <span id="status-text">Trip Stopped</span>
+                </div>
+            </div>
         </div>
 
-        <!-- Buttons -->
-        <div class="flex gap-4 mb-4">
-            <button id="startBtn" onclick="startTrip()"
-                class="flex-1 bg-green-500 hover:bg-green-600 text-white py-2 rounded-lg font-semibold transition">
-                ▶ Start Trip
-            </button>
+        <!-- Action Buttons -->
+        <div class="animate-slide-up" style="animation-delay: 0.2s; opacity: 0;">
+            <div class="flex gap-3">
+                <button id="startBtn" onclick="startTrip()"
+                    class="btn-glow btn-start flex-1 text-white py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all duration-300">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z">
+                        </path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    Start Trip
+                </button>
 
-            <button id="stopBtn" onclick="stopTrip()"
-                class="flex-1 bg-red-500 hover:bg-red-600 text-white py-2 rounded-lg font-semibold transition">
-                ⏹ Stop Trip
-            </button>
+                <button id="stopBtn" onclick="stopTrip()"
+                    class="btn-glow btn-stop btn-disabled flex-1 text-white py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all duration-300">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"></path>
+                    </svg>
+                    Stop Trip
+                </button>
+            </div>
         </div>
 
-        <!-- Live Log -->
-        <div class="bg-gray-50 border rounded-lg p-3 h-44 overflow-y-auto text-sm">
-            <p class="text-gray-500 mb-2 font-semibold">📍 Live Location Logs</p>
-            <div id="log" class="space-y-1 text-gray-700"></div>
+        <!-- Stats Grid -->
+        <div class="animate-slide-up" style="animation-delay: 0.3s; opacity: 0;">
+            <div class="grid grid-cols-3 gap-3">
+                <!-- Coordinates -->
+                <div class="glass-light rounded-xl p-3 gradient-border col-span-2">
+                    <div class="flex items-center gap-1.5 mb-1.5">
+                        <svg class="w-3 h-3 text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z">
+                            </path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                        </svg>
+                        <span class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">Current
+                            Position</span>
+                    </div>
+                    <p id="stat-coords" class="text-slate-300 font-mono text-xs">—</p>
+                </div>
+
+                <!-- Updates Count -->
+                <div class="glass-light rounded-xl p-3 gradient-border">
+                    <div class="flex items-center gap-1.5 mb-1.5">
+                        <svg class="w-3 h-3 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                        </svg>
+                        <span class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">Pings</span>
+                    </div>
+                    <p id="stat-pings" class="text-white font-bold text-xl">0</p>
+                </div>
+            </div>
         </div>
 
-        <div class="mt-4">
-            <div id="map" class="w-full h-64 rounded-xl border shadow"></div>
+        <!-- ETA Stats (visible when trip active) -->
+        <div id="eta-stats" class="hidden animate-slide-up" style="animation-delay: 0.35s;">
+            <div class="grid grid-cols-2 gap-3">
+                <div class="glass-light rounded-xl p-3 gradient-border">
+                    <div class="flex items-center gap-1.5 mb-1">
+                        <svg class="w-3 h-3 text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
+                        </svg>
+                        <span
+                            class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">Distance</span>
+                    </div>
+                    <p id="stat-distance" class="text-white font-bold text-lg">—</p>
+                </div>
+                <div class="glass-light rounded-xl p-3 gradient-border">
+                    <div class="flex items-center gap-1.5 mb-1">
+                        <svg class="w-3 h-3 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <span class="text-slate-500 text-[10px] font-semibold uppercase tracking-wider">ETA</span>
+                    </div>
+                    <p id="stat-eta" class="text-white font-bold text-lg">—</p>
+                </div>
+            </div>
         </div>
 
+        <!-- Live Location Logs -->
+        <div class="animate-slide-up flex-1 min-h-0" style="animation-delay: 0.4s; opacity: 0;">
+            <div
+                class="glass-panel rounded-2xl shadow-2xl shadow-black/20 flex flex-col h-full max-h-[300px] lg:max-h-none lg:flex-1">
+                <div class="flex items-center gap-2 px-5 py-3 border-b border-white/5">
+                    <div class="w-6 h-6 rounded-lg bg-brand-500/20 flex items-center justify-center">
+                        <svg class="w-3.5 h-3.5 text-brand-400" fill="none" stroke="currentColor"
+                            viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2">
+                            </path>
+                        </svg>
+                    </div>
+                    <span class="text-slate-300 text-xs font-semibold">Location Logs</span>
+                    <span id="log-count" class="ml-auto text-slate-500 text-[10px] font-medium">0 entries</span>
+                </div>
+                <div id="log" class="flex-1 overflow-y-auto p-3 space-y-1.5"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Panel: Map -->
+    <div class="flex-1 p-4 lg:p-6 lg:pl-0">
+        <div class="glass-panel rounded-2xl overflow-hidden shadow-2xl shadow-black/30 h-[350px] lg:h-full animate-fade"
+            style="animation-delay: 0.5s; opacity: 0;">
+            <div id="map" class="w-full h-full"></div>
+        </div>
     </div>
 
     <script>
-        const socket = io("https://live-tracking-gf97.onrender.com");
+        // ─── CONFIG ──────────────────────────────────────────
+        const SERVER_URL = "https://live-tracking-gf97.onrender.com";
+        const tripId = "123";
+        const driverId = "driver_1";
 
-        let map;
-        let marker;
+        // ─── SOCKET WITH OPTIMIZED SETTINGS ──────────────────
+        const socket = io(SERVER_URL, {
+            transports: ["websocket", "polling"],
+            reconnection: true,
+            reconnectionAttempts: Infinity,
+            reconnectionDelay: 1000,
+            reconnectionDelayMax: 10000,
+            timeout: 20000,
+        });
+
+        // ─── STATE ───────────────────────────────────────────
+        let map = null;
+        let marker = null;
         let customerLocation = null;
         let customerMarker = null;
+        let routeCalculated = false;
+        let routePolyline = null;
+        let routeShadow = null;
+        let pingCount = 0;
+        let watchId = null;
+        let animFrameId = null;
 
+        // GPS Throttling: Don't emit location faster than this
+        let lastEmitTime = 0;
+        const GPS_EMIT_INTERVAL_MS = 2000;
+
+        // ETA Throttling
+        let lastETATime = 0;
+        let etaPending = false;
+        const ETA_INTERVAL_MS = 15000;
+
+        // Location smoothing: track last known position to filter jitter
+        let lastLat = null;
+        let lastLng = null;
+        const MIN_DISTANCE_CHANGE = 0.00005; // ~5.5 meters
+
+        // ─── DOM ELEMENTS ────────────────────────────────────
+        const statusDiv = document.getElementById("status");
+        const statusTextEl = document.getElementById("status-text");
+        const logDiv = document.getElementById("log");
+        const startBtn = document.getElementById("startBtn");
+        const stopBtn = document.getElementById("stopBtn");
+        const statCoords = document.getElementById("stat-coords");
+        const statPings = document.getElementById("stat-pings");
+        const logCountEl = document.getElementById("log-count");
+        const connectionDot = document.getElementById("connection-dot");
+        const connectionTextEl = document.getElementById("connection-text");
+        const etaStatsDiv = document.getElementById("eta-stats");
+        const statDistance = document.getElementById("stat-distance");
+        const statEta = document.getElementById("stat-eta");
+
+        // ─── CONNECTION STATUS ───────────────────────────────
+        socket.on("connect", () => {
+            connectionDot.className = "connection-dot connected";
+            connectionTextEl.textContent = "Connected";
+        });
+
+        socket.on("disconnect", () => {
+            connectionDot.className = "connection-dot disconnected";
+            connectionTextEl.textContent = "Reconnecting...";
+        });
+
+        socket.on("reconnect", () => {
+            connectionDot.className = "connection-dot connected";
+            connectionTextEl.textContent = "Connected";
+            // Re-join trip on reconnect if trip is active
+            if (watchId !== null) {
+                socket.emit("join_trip", { tripId, driverId });
+            }
+        });
+
+        socket.on("connect_error", () => {
+            connectionDot.className = "connection-dot disconnected";
+            connectionTextEl.textContent = "Connection error";
+        });
+
+        // ─── TRIP DATA HANDLER ───────────────────────────────
         socket.on("trip_data", (data) => {
-            console.log("Trip data:", data);
             customerLocation = data.customerLocation;
 
-            // 👉 create marker if map ready
             if (map && customerLocation && !customerMarker) {
+                const el = document.createElement("div");
+                el.innerHTML = `
+                    <div style="position:relative; display:flex; align-items:center; justify-content:center;">
+                        <div style="width:16px; height:16px; background: #6366f1; border-radius:50%; border: 3px solid white; box-shadow: 0 2px 8px rgba(99,102,241,0.5);"></div>
+                        <div style="position:absolute; width:32px; height:32px; border-radius:50%; border: 2px solid rgba(99,102,241,0.3); animation: pulse-ring 2s infinite;"></div>
+                    </div>
+                `;
                 customerMarker = new google.maps.marker.AdvancedMarkerElement({
                     position: customerLocation,
                     map: map,
-                    content: (() => {
-                        const el = document.createElement("div");
-                        el.innerText = "📍";
-                        el.style.fontSize = "24px";
-                        return el;
-                    })()
+                    content: el,
                 });
             }
+
             if (marker && customerLocation && !routeCalculated) {
                 const pos = marker.position;
-
                 calculateRoadRoute(
-                    { lat: pos.lat, lng: pos.lng },
+                    { lat: typeof pos.lat === 'function' ? pos.lat() : pos.lat, lng: typeof pos.lng === 'function' ? pos.lng() : pos.lng },
                     customerLocation
                 );
             }
-
         });
 
+        // ─── INIT MAP ────────────────────────────────────────
         function initMap() {
             map = new google.maps.Map(document.getElementById("map"), {
                 center: { lat: 20.5937, lng: 78.9629 },
                 zoom: 5,
-                mapId: "4dd6763787209b1ccbdfd3ca"
+                mapId: "4dd6763787209b1ccbdfd3ca",
+                disableDefaultUI: true,
+                zoomControl: false,
+                mapTypeControl: false,
+                streetViewControl: false,
+                fullscreenControl: false,
+                gestureHandling: "greedy",
             });
-
         }
 
-        let routeCalculated = false;
-
+        // ─── ROUTE DRAWING ───────────────────────────────────
         async function calculateRoadRoute(start, end) {
             if (routeCalculated) return;
 
@@ -116,90 +606,118 @@
 
                 const path = result.routes[0].path;
 
-                new google.maps.Polyline({
+                if (routeShadow) routeShadow.setMap(null);
+                if (routePolyline) routePolyline.setMap(null);
+
+                routeShadow = new google.maps.Polyline({
                     path: path,
-                    strokeColor: "#4285F4",
+                    strokeColor: "#312e81",
+                    strokeWeight: 8,
+                    strokeOpacity: 0.3,
+                    map: map
+                });
+
+                routePolyline = new google.maps.Polyline({
+                    path: path,
+                    strokeColor: "#6366f1",
                     strokeWeight: 5,
+                    strokeOpacity: 0.8,
                     map: map
                 });
 
                 routeCalculated = true;
-                console.log("✅ Route drawn successfully");
+                console.log("✅ Route drawn");
 
             } catch (err) {
                 console.error("Route error:", err);
             }
         }
 
+        // ─── CAR MARKER ──────────────────────────────────────
         function createCarMarker() {
+            const wrapper = document.createElement("div");
+            wrapper.style.position = "relative";
+
             const img = document.createElement("img");
             img.src = "https://res.cloudinary.com/dbl9y4zkr/image/upload/v1773823755/car_n4nchm.png";
-            img.style.width = "40px";
-            img.style.height = "40px";
+            img.style.width = "44px";
+            img.style.height = "44px";
             img.style.transformOrigin = "center";
-            return img;
+            img.style.filter = "drop-shadow(0 4px 8px rgba(0,0,0,0.3))";
+            img.style.willChange = "transform";
+            img.style.transition = "transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94)";
+
+            wrapper.appendChild(img);
+            return wrapper;
         }
 
-        const tripId = "123";
-        const driverId = "driver_1";
-
-        let watchId = null;
-
-        const statusDiv = document.getElementById("status");
-        const logDiv = document.getElementById("log");
-        const startBtn = document.getElementById("startBtn");
-        const stopBtn = document.getElementById("stopBtn");
-
-        // 🔹 Status handler
+        // ─── STATUS ──────────────────────────────────────────
         function setStatus(type, message) {
             const styles = {
-                success: "bg-green-100 text-green-600",
-                error: "bg-red-100 text-red-600",
-                warning: "bg-yellow-100 text-yellow-700"
+                success: { bg: "bg-emerald-500/10", text: "text-emerald-400", dot: "bg-emerald-400" },
+                error: { bg: "bg-red-500/10", text: "text-red-400", dot: "bg-red-400" },
+                warning: { bg: "bg-amber-500/10", text: "text-amber-400", dot: "bg-amber-400" },
             };
 
-            statusDiv.className = `text-center mb-4 text-sm font-semibold px-3 py-2 rounded-lg ${styles[type]}`;
-            statusDiv.innerText = message;
+            const style = styles[type] || styles.error;
+            statusDiv.className = `flex items-center gap-2 ${style.bg} ${style.text} px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-500`;
+            statusTextEl.textContent = message;
+
+            const dot = statusDiv.querySelector('.dot');
+            if (dot) dot.className = `dot w-2 h-2 ${style.dot} rounded-full block`;
         }
 
-        // 🔹 Log handler (max 20 logs)
+        // ─── LOG ─────────────────────────────────────────────
         function addLog(text) {
-            const p = document.createElement("p");
-            p.textContent = text;
-            logDiv.prepend(p);
+            const entry = document.createElement("div");
+            entry.className = "log-entry pl-3 py-1.5 text-slate-400 text-[11px] font-mono leading-relaxed";
+            entry.textContent = text;
+            logDiv.prepend(entry);
 
-            if (logDiv.children.length > 20) {
+            // Keep max 40 entries for performance
+            while (logDiv.children.length > 40) {
                 logDiv.removeChild(logDiv.lastChild);
             }
+
+            logCountEl.textContent = `${logDiv.children.length} entries`;
         }
 
-        // 🔹 Local stop (NO API call)
-        function handleLocalStop(message = "❌ Trip Stopped") {
+        // ─── STOP HANDLER ────────────────────────────────────
+        function handleLocalStop(message = "Trip Stopped") {
             if (watchId !== null) {
                 navigator.geolocation.clearWatch(watchId);
                 watchId = null;
             }
 
-            startBtn.disabled = false;
-            stopBtn.disabled = true;
+            startBtn.classList.remove("btn-disabled");
+            stopBtn.classList.add("btn-disabled");
+            startBtn.classList.remove("ripple-active");
 
             setStatus("error", message);
             addLog("🛑 Trip stopped");
+
+            etaStatsDiv.classList.add("hidden");
         }
 
-        // 🔹 Start Trip
+        // ─── DISTANCE CHECK (filter GPS jitter) ──────────────
+        function hasMovedEnough(lat, lng) {
+            if (lastLat === null || lastLng === null) return true;
+            const dlat = Math.abs(lat - lastLat);
+            const dlng = Math.abs(lng - lastLng);
+            return dlat > MIN_DISTANCE_CHANGE || dlng > MIN_DISTANCE_CHANGE;
+        }
+
+        // ─── START TRIP ──────────────────────────────────────
         async function startTrip() {
             if (watchId !== null) return;
 
-            startBtn.disabled = true;
-            setStatus("warning", "⏳ Starting trip...");
+            startBtn.classList.add("btn-disabled");
+            setStatus("warning", "Starting trip...");
 
             try {
-                const res = await fetch("https://live-tracking-gf97.onrender.com/trip/start", {
+                const res = await fetch(`${SERVER_URL}/trip/start`, {
                     method: "POST",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
+                    headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
                         tripId,
                         driverId,
@@ -208,33 +726,56 @@
                     })
                 });
 
-                if (!res.ok) {
-                    throw new Error("Start failed");
-                }
+                if (!res.ok) throw new Error("Start failed");
 
                 socket.emit("join_trip", { tripId, driverId });
 
-                stopBtn.disabled = false;
-                setStatus("success", "✅ Trip Started");
+                stopBtn.classList.remove("btn-disabled");
+                setStatus("success", "Trip Active — Broadcasting");
+                startBtn.classList.add("ripple-active");
+
+                // Show ETA stats
+                etaStatsDiv.classList.remove("hidden");
+
+                // Reset route for fresh calculation
+                routeCalculated = false;
 
                 watchId = navigator.geolocation.watchPosition((pos) => {
                     const lat = pos.coords.latitude;
                     const lng = pos.coords.longitude;
-
-                    const time = new Date().toLocaleTimeString();
-
-                    socket.emit("location_update", { tripId, driverId, lat, lng });
-
-                    console.log("Driver sent:", lat, lng);
-
                     const accuracy = pos.coords.accuracy;
-                    addLog(`🕒 ${time} → Lat: ${lat.toFixed(5)}, Lng: ${lng.toFixed(5)} (±${accuracy}m)`);
 
-                    // ✅ Map update
-                    if (!map) {
-                        console.warn("Map not loaded yet");
+                    // Filter out inaccurate readings (>50m accuracy)
+                    if (accuracy > 50) {
+                        console.log(`Skipping inaccurate reading: ±${accuracy}m`);
                         return;
                     }
+
+                    // Filter GPS jitter — skip if hasn't moved enough
+                    if (!hasMovedEnough(lat, lng)) return;
+
+                    lastLat = lat;
+                    lastLng = lng;
+
+                    // Throttle socket emissions
+                    const now = Date.now();
+                    if (now - lastEmitTime >= GPS_EMIT_INTERVAL_MS) {
+                        lastEmitTime = now;
+                        socket.emit("location_update", { tripId, driverId, lat, lng });
+
+                        pingCount++;
+                        statPings.textContent = pingCount;
+                    }
+
+                    // Always update local display
+                    statCoords.textContent = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+
+                    const time = new Date().toLocaleTimeString();
+                    addLog(`${time} → ${lat.toFixed(5)}, ${lng.toFixed(5)} ±${Math.round(accuracy)}m`);
+
+                    // Map updates
+                    if (!map) return;
+
                     if (!marker) {
                         marker = new google.maps.marker.AdvancedMarkerElement({
                             position: { lat, lng },
@@ -242,39 +783,53 @@
                             content: createCarMarker()
                         });
 
-                        map.setCenter(customerLocation);
+                        map.setCenter(customerLocation || { lat, lng });
                         map.setZoom(14);
-
-
                     } else {
                         animateMarker(marker, lat, lng);
                         map.panTo({ lat, lng });
                     }
 
-                    if (customerLocation) {
-                        updateETADisplay({ lat, lng }, customerLocation);
+                    // Route: only calculate once
+                    if (customerLocation && !routeCalculated) {
+                        calculateRoadRoute({ lat, lng }, customerLocation);
                     }
-                    routeCalculated = false;
 
+                    // Throttled ETA
+                    if (customerLocation) {
+                        throttledETAUpdate({ lat, lng }, customerLocation);
+                    }
 
                 }, (err) => {
-                    setStatus("error", "❌ GPS Error");
-                    startBtn.disabled = false;
+                    setStatus("error", "GPS Error — Check permissions");
+                    startBtn.classList.remove("btn-disabled");
+                    startBtn.classList.remove("ripple-active");
                     console.error("GPS error:", err.message);
-                    alert("Location access denied. Please enable GPS.");
-                    setStatus("error", "❌ Location permission denied");
-                    addLog("⚠ User denied GPS access");
+                    addLog("⚠ GPS access denied");
                 }, {
                     enableHighAccuracy: true,
-                    timeout: 10000,
-                    maximumAge: 0
+                    timeout: 15000,
+                    maximumAge: 1000, // Accept 1s old positions to avoid gaps
                 });
 
             } catch (err) {
-                startBtn.disabled = false;
-                setStatus("error", "❌ Failed to start trip");
+                startBtn.classList.remove("btn-disabled");
+                startBtn.classList.remove("ripple-active");
+                setStatus("error", "Failed to start trip");
                 console.error(err);
             }
+        }
+
+        // ─── THROTTLED ETA ───────────────────────────────────
+        function throttledETAUpdate(start, end) {
+            const now = Date.now();
+            if (now - lastETATime < ETA_INTERVAL_MS || etaPending) return;
+
+            lastETATime = now;
+            etaPending = true;
+            updateETADisplay(start, end).finally(() => {
+                etaPending = false;
+            });
         }
 
         async function updateETADisplay(start, end) {
@@ -289,79 +844,87 @@
                 if (!result.routes || result.routes.length === 0) return;
 
                 const leg = result.routes[0].legs[0];
-
                 const distanceKm = (leg.distanceMeters / 1000).toFixed(1);
                 const minutes = Math.ceil(leg.durationMillis / 60000);
+                const hours = Math.floor(minutes / 60);
+                const mins = minutes % 60;
+                const etaText = hours > 0 ? `${hours}h ${mins}m` : `${mins} min`;
 
-                console.log(`ETA: ${minutes} min | ${distanceKm} km`);
+                statDistance.textContent = `${distanceKm} km`;
+                statEta.textContent = etaText;
+
+                console.log(`ETA: ${etaText} | ${distanceKm} km`);
 
             } catch (err) {
-                console.error(err);
+                console.error("ETA error:", err);
             }
         }
 
-        // 🔹 Stop Trip (API call)
+        // ─── STOP TRIP ───────────────────────────────────────
         async function stopTrip() {
             try {
-                const res = await fetch("https://live-tracking-gf97.onrender.com/trip/stop", {
+                const res = await fetch(`${SERVER_URL}/trip/stop`, {
                     method: "POST",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
+                    headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ tripId, driverId })
                 });
 
-                if (!res.ok) {
-                    throw new Error("Stop failed");
-                }
+                if (!res.ok) throw new Error("Stop failed");
 
                 handleLocalStop();
 
             } catch (err) {
-                setStatus("error", "❌ Failed to stop trip");
+                setStatus("error", "Failed to stop trip");
                 console.error(err);
             }
         }
 
-        // 🔹 Socket listeners
+        // ─── SOCKET LISTENERS ────────────────────────────────
         socket.on("receive_location", (data) => {
-            console.log("Live location:", data);
+            // Driver page doesn't need to react to its own locations
         });
 
         socket.on("trip_stopped", () => {
-            handleLocalStop("⚠ Trip ended by server");
+            handleLocalStop("Trip ended by server");
         });
 
-        socket.on("connect_error", () => {
-            setStatus("error", "❌ Socket connection failed");
-        });
+        // ─── INITIAL STATE ───────────────────────────────────
+        stopBtn.classList.add("btn-disabled");
 
-        // 🔹 Initial state
-        stopBtn.disabled = true;
-
+        // ─── SMOOTH MARKER ANIMATION ─────────────────────────
         function animateMarker(marker, newLat, newLng) {
-            const startLat = marker.position.lat;
-            const startLng = marker.position.lng;
+            if (animFrameId) cancelAnimationFrame(animFrameId);
 
-            const duration = 1000;
+            const pos = marker.position;
+            const startLat = typeof pos.lat === 'function' ? pos.lat() : pos.lat;
+            const startLng = typeof pos.lng === 'function' ? pos.lng() : pos.lng;
+
+            // Skip if movement is negligible
+            const dlat = Math.abs(newLat - startLat);
+            const dlng = Math.abs(newLng - startLng);
+            if (dlat < 0.000001 && dlng < 0.000001) return;
+
+            const duration = 1200;
             const startTime = performance.now();
 
             function animate(time) {
                 const progress = Math.min((time - startTime) / duration, 1);
+                const eased = 1 - Math.pow(1 - progress, 3);
 
-                const lat = startLat + (newLat - startLat) * progress;
-                const lng = startLng + (newLng - startLng) * progress;
+                const lat = startLat + (newLat - startLat) * eased;
+                const lng = startLng + (newLng - startLng) * eased;
 
                 marker.position = { lat, lng };
 
                 if (progress < 1) {
-                    requestAnimationFrame(animate);
+                    animFrameId = requestAnimationFrame(animate);
+                } else {
+                    animFrameId = null;
                 }
             }
 
-            requestAnimationFrame(animate);
+            animFrameId = requestAnimationFrame(animate);
         }
-
     </script>
 
 </body>

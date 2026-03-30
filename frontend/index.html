@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TrackFlow — Real-Time Live Tracking</title>
+    <meta name="description" content="Real-time GPS-based live driver tracking system. Track deliveries, rides, and more with pinpoint accuracy.">
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+        rel="stylesheet">
+
+    <style>
+        *,
+        *::before,
+        *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --brand-400: #818cf8;
+            --brand-500: #6366f1;
+            --brand-600: #4f46e5;
+            --brand-700: #4338ca;
+            --brand-900: #312e81;
+            --surface-dark: #0f172a;
+            --surface-card: #1e293b;
+            --emerald-400: #34d399;
+            --emerald-500: #10b981;
+            --emerald-600: #059669;
+            --amber-400: #fbbf24;
+            --purple-400: #c084fc;
+            --purple-500: #a855f7;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background: var(--surface-dark);
+            color: #e2e8f0;
+            overflow-x: hidden;
+            min-height: 100vh;
+        }
+
+        /* ─── AMBIENT BACKGROUND ──────────────────────────── */
+        .ambient-bg {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+            background:
+                radial-gradient(ellipse 80% 50% at 50% -20%, rgba(99, 102, 241, 0.15) 0%, transparent 60%),
+                radial-gradient(ellipse 60% 40% at 80% 100%, rgba(139, 92, 246, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse 40% 30% at 10% 80%, rgba(16, 185, 129, 0.06) 0%, transparent 50%);
+        }
+
+        /* Floating orbs */
+        .orb {
+            position: fixed;
+            border-radius: 50%;
+            filter: blur(80px);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .orb-1 {
+            width: 500px;
+            height: 500px;
+            background: rgba(99, 102, 241, 0.12);
+            top: -10%;
+            right: -5%;
+            animation: float-orb 20s ease-in-out infinite;
+        }
+
+        .orb-2 {
+            width: 400px;
+            height: 400px;
+            background: rgba(139, 92, 246, 0.08);
+            bottom: -5%;
+            left: -5%;
+            animation: float-orb 25s ease-in-out infinite reverse;
+        }
+
+        .orb-3 {
+            width: 300px;
+            height: 300px;
+            background: rgba(16, 185, 129, 0.06);
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            animation: float-orb 18s ease-in-out infinite;
+        }
+
+        @keyframes float-orb {
+            0%, 100% { transform: translate(0, 0); }
+            25% { transform: translate(30px, -20px); }
+            50% { transform: translate(-20px, 30px); }
+            75% { transform: translate(20px, 20px); }
+        }
+
+        /* ─── GRID PATTERN ────────────────────────────────── */
+        .grid-pattern {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+            background-image:
+                linear-gradient(rgba(99, 102, 241, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(99, 102, 241, 0.03) 1px, transparent 1px);
+            background-size: 60px 60px;
+            mask-image: radial-gradient(ellipse at center, black 30%, transparent 70%);
+            -webkit-mask-image: radial-gradient(ellipse at center, black 30%, transparent 70%);
+        }
+
+        /* ─── NAV ─────────────────────────────────────────── */
+        nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 50;
+            padding: 1rem 2rem;
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        nav.scrolled {
+            background: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(99, 102, 241, 0.1);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .nav-inner {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            text-decoration: none;
+        }
+
+        .logo-icon {
+            width: 38px;
+            height: 38px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, var(--brand-500), var(--brand-700));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
+        }
+
+        .logo-text {
+            font-size: 1.25rem;
+            font-weight: 800;
+            color: white;
+            letter-spacing: -0.02em;
+        }
+
+        .logo-text span {
+            background: linear-gradient(135deg, var(--brand-400), var(--purple-400));
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .nav-badge {
+            font-size: 0.65rem;
+            font-weight: 700;
+            padding: 3px 8px;
+            border-radius: 20px;
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--emerald-400);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+        }
+
+        /* ─── HERO ────────────────────────────────────────── */
+        .hero {
+            position: relative;
+            z-index: 1;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 120px 24px 80px;
+        }
+
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 16px 6px 8px;
+            border-radius: 100px;
+            background: rgba(99, 102, 241, 0.1);
+            border: 1px solid rgba(99, 102, 241, 0.2);
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--brand-400);
+            margin-bottom: 32px;
+            animation: fadeSlideUp 0.6s ease forwards;
+            opacity: 0;
+        }
+
+        .hero-badge .icon-dot {
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--brand-500), var(--purple-500));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .hero-title {
+            font-size: clamp(2.5rem, 7vw, 4.5rem);
+            font-weight: 900;
+            line-height: 1.05;
+            letter-spacing: -0.03em;
+            color: white;
+            margin-bottom: 24px;
+            max-width: 800px;
+            animation: fadeSlideUp 0.6s ease forwards;
+            animation-delay: 0.1s;
+            opacity: 0;
+        }
+
+        .hero-title .gradient {
+            background: linear-gradient(135deg, var(--brand-400), var(--purple-400), var(--emerald-400));
+            background-size: 200% auto;
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: gradient-shift 6s ease infinite;
+        }
+
+        @keyframes gradient-shift {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+
+        .hero-subtitle {
+            font-size: clamp(1rem, 2.5vw, 1.2rem);
+            color: #94a3b8;
+            max-width: 560px;
+            line-height: 1.7;
+            margin-bottom: 48px;
+            font-weight: 400;
+            animation: fadeSlideUp 0.6s ease forwards;
+            animation-delay: 0.2s;
+            opacity: 0;
+        }
+
+        /* ─── ROLE CARDS ──────────────────────────────────── */
+        .cards-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 24px;
+            max-width: 720px;
+            width: 100%;
+            animation: fadeSlideUp 0.6s ease forwards;
+            animation-delay: 0.35s;
+            opacity: 0;
+        }
+
+        .role-card {
+            position: relative;
+            border-radius: 24px;
+            padding: 2px;
+            text-decoration: none;
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .role-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: 24px;
+            padding: 2px;
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.4), rgba(139, 92, 246, 0.2), rgba(99, 102, 241, 0.1));
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+            transition: all 0.4s ease;
+        }
+
+        .role-card:hover::before {
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.7), rgba(139, 92, 246, 0.5), rgba(99, 102, 241, 0.3));
+        }
+
+        .role-card:hover {
+            transform: translateY(-8px);
+        }
+
+        .role-card.driver-card:hover {
+            box-shadow: 0 20px 60px -15px rgba(16, 185, 129, 0.25);
+        }
+
+        .role-card.driver-card:hover::before {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.6), rgba(52, 211, 153, 0.3), rgba(16, 185, 129, 0.1));
+        }
+
+        .role-card.customer-card:hover {
+            box-shadow: 0 20px 60px -15px rgba(99, 102, 241, 0.25);
+        }
+
+        .card-inner {
+            background: rgba(15, 23, 42, 0.9);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: 22px;
+            padding: 36px 32px;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            gap: 20px;
+        }
+
+        .card-icon {
+            width: 64px;
+            height: 64px;
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        .customer-card .card-icon {
+            background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(139, 92, 246, 0.1));
+        }
+
+        .driver-card .card-icon {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(52, 211, 153, 0.1));
+        }
+
+        .card-icon svg {
+            width: 28px;
+            height: 28px;
+        }
+
+        .customer-card .card-icon svg {
+            color: var(--brand-400);
+        }
+
+        .driver-card .card-icon svg {
+            color: var(--emerald-400);
+        }
+
+        .card-title {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: white;
+            letter-spacing: -0.01em;
+        }
+
+        .card-desc {
+            font-size: 0.9rem;
+            color: #94a3b8;
+            line-height: 1.6;
+        }
+
+        .card-action {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            padding: 10px 24px;
+            border-radius: 14px;
+            transition: all 0.3s ease;
+            margin-top: auto;
+        }
+
+        .customer-card .card-action {
+            background: linear-gradient(135deg, var(--brand-600), var(--brand-500));
+            color: white;
+            box-shadow: 0 4px 20px rgba(99, 102, 241, 0.3);
+        }
+
+        .customer-card .card-action:hover {
+            box-shadow: 0 8px 30px rgba(99, 102, 241, 0.5);
+        }
+
+        .driver-card .card-action {
+            background: linear-gradient(135deg, var(--emerald-600), var(--emerald-500));
+            color: white;
+            box-shadow: 0 4px 20px rgba(16, 185, 129, 0.3);
+        }
+
+        .driver-card .card-action:hover {
+            box-shadow: 0 8px 30px rgba(16, 185, 129, 0.5);
+        }
+
+        .card-action .arrow {
+            transition: transform 0.3s ease;
+        }
+
+        .role-card:hover .card-action .arrow {
+            transform: translateX(4px);
+        }
+
+        /* ─── FEATURES SECTION ────────────────────────────── */
+        .features {
+            position: relative;
+            z-index: 1;
+            padding: 40px 24px 100px;
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+        }
+
+        .feature-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            padding: 28px 20px;
+            border-radius: 20px;
+            background: rgba(30, 41, 59, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            transition: all 0.3s ease;
+        }
+
+        .feature-item:hover {
+            background: rgba(30, 41, 59, 0.6);
+            border-color: rgba(99, 102, 241, 0.15);
+            transform: translateY(-4px);
+        }
+
+        .feature-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 14px;
+            font-size: 1.3rem;
+        }
+
+        .feature-item:nth-child(1) .feature-icon { background: rgba(99, 102, 241, 0.15); }
+        .feature-item:nth-child(2) .feature-icon { background: rgba(16, 185, 129, 0.15); }
+        .feature-item:nth-child(3) .feature-icon { background: rgba(251, 191, 36, 0.15); }
+        .feature-item:nth-child(4) .feature-icon { background: rgba(168, 85, 247, 0.15); }
+
+        .feature-label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #cbd5e1;
+            margin-bottom: 4px;
+        }
+
+        .feature-sublabel {
+            font-size: 0.75rem;
+            color: #64748b;
+        }
+
+        /* ─── FOOTER ──────────────────────────────────────── */
+        footer {
+            position: relative;
+            z-index: 1;
+            text-align: center;
+            padding: 24px;
+            border-top: 1px solid rgba(255, 255, 255, 0.04);
+            color: #475569;
+            font-size: 0.8rem;
+        }
+
+        footer a {
+            color: var(--brand-400);
+            text-decoration: none;
+        }
+
+        /* ─── ANIMATIONS ──────────────────────────────────── */
+        @keyframes fadeSlideUp {
+            from {
+                opacity: 0;
+                transform: translateY(24px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* ─── RESPONSIVE ──────────────────────────────────── */
+        @media (max-width: 640px) {
+            nav { padding: 0.75rem 1rem; }
+            .hero { padding: 100px 16px 60px; }
+            .cards-container { grid-template-columns: 1fr; max-width: 400px; }
+            .card-inner { padding: 28px 24px; }
+            .features-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+
+        /* ─── SCROLLBAR ───────────────────────────────────── */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(99, 102, 241, 0.3); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(99, 102, 241, 0.5); }
+    </style>
+</head>
+
+<body>
+
+    <!-- Ambient effects -->
+    <div class="ambient-bg"></div>
+    <div class="grid-pattern"></div>
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+
+    <!-- Navigation -->
+    <nav id="navbar">
+        <div class="nav-inner">
+            <a href="#" class="logo">
+                <div class="logo-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                        <circle cx="12" cy="10" r="3"></circle>
+                    </svg>
+                </div>
+                <span class="logo-text">Track<span>Flow</span></span>
+            </a>
+            <span class="nav-badge">● Live</span>
+        </div>
+    </nav>
+
+    <!-- Hero -->
+    <section class="hero">
+        <div class="hero-badge">
+            <span class="icon-dot">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5">
+                    <path d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                </svg>
+            </span>
+            Real-Time GPS Tracking System
+        </div>
+
+        <h1 class="hero-title">
+            Track Every Move,<br><span class="gradient">In Real Time</span>
+        </h1>
+
+        <p class="hero-subtitle">
+            Smooth, live driver tracking powered by WebSockets and Google Maps.
+            Choose your role below to get started.
+        </p>
+
+        <!-- Role Cards -->
+        <div class="cards-container">
+            <!-- Customer Card -->
+            <a href="customer.html" class="role-card customer-card" id="card-customer">
+                <div class="card-inner">
+                    <div class="card-icon">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                        </svg>
+                    </div>
+                    <h2 class="card-title">Customer View</h2>
+                    <p class="card-desc">Track your driver on a live map with real-time ETA, distance updates, and smooth animations.</p>
+                    <div class="card-action">
+                        Open Tracker
+                        <svg class="arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <path d="M5 12h14M12 5l7 7-7 7"></path>
+                        </svg>
+                    </div>
+                </div>
+            </a>
+
+            <!-- Driver Card -->
+            <a href="driver.html" class="role-card driver-card" id="card-driver">
+                <div class="card-inner">
+                    <div class="card-icon">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m-4 0a2 2 0 114 0m6 0a2 2 0 104 0m-4 0a2 2 0 114 0"></path>
+                        </svg>
+                    </div>
+                    <h2 class="card-title">Driver Panel</h2>
+                    <p class="card-desc">Start broadcasting your live GPS location, manage trips, and view route info on the go.</p>
+                    <div class="card-action">
+                        Open Panel
+                        <svg class="arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <path d="M5 12h14M12 5l7 7-7 7"></path>
+                        </svg>
+                    </div>
+                </div>
+            </a>
+        </div>
+    </section>
+
+    <!-- Features Strip -->
+    <section class="features">
+        <div class="features-grid">
+            <div class="feature-item">
+                <div class="feature-icon">📡</div>
+                <div class="feature-label">WebSocket</div>
+                <div class="feature-sublabel">Low-latency updates</div>
+            </div>
+            <div class="feature-item">
+                <div class="feature-icon">🗺️</div>
+                <div class="feature-label">Google Maps</div>
+                <div class="feature-sublabel">Advanced markers</div>
+            </div>
+            <div class="feature-item">
+                <div class="feature-icon">⚡</div>
+                <div class="feature-label">Redis Cache</div>
+                <div class="feature-sublabel">Blazing fast state</div>
+            </div>
+            <div class="feature-item">
+                <div class="feature-icon">🔄</div>
+                <div class="feature-label">Auto Reconnect</div>
+                <div class="feature-sublabel">Always connected</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        Built with ♥ using Node.js, Socket.IO, Redis & Google Maps
+    </footer>
+
+    <script>
+        // Navbar scroll effect
+        const navbar = document.getElementById("navbar");
+        window.addEventListener("scroll", () => {
+            navbar.classList.toggle("scrolled", window.scrollY > 30);
+        }, { passive: true });
+    </script>
+</body>
+
+</html>
